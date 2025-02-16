@@ -9,11 +9,17 @@ fi
 # Validate tests
 cargo test --all-features
 
-# Create tag
-git tag -a v$1 -m "Release v$1"
-git push origin v$1
+# Bump version if needed (use cargo-edit)
+cargo install cargo-edit 2>/dev/null || true
+cargo set-version $1
 
 # Publish to crates.io
-./scripts/publish-crate.sh $1
+cargo publish
+
+# Tag release
+git tag v$(cargo metadata --format-version 1 | jq -r '.packages[] | select(.name=="sync-rs") | .version') -m "Release v$1"
+git add .
+git commit -m "chore: Release v$1"
+git push origin --tags
 
 echo "Release v$1 completed successfully!"

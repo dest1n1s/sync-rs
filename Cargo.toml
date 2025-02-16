@@ -2,6 +2,9 @@
 name = "sync-rs"
 version = "1.0.0"
 edition = "2021"
+description = "A CLI tool to sync files between directories"
+authors = ["Dest1n1s <destin@dest1n1s.com>"]
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0"

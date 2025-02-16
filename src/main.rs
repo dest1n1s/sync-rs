@@ -122,10 +122,7 @@ fn main() -> Result<()> {
     // Execute post-sync command if specified
     if let Some(cmd) = post_sync_command {
         println!("Executing post-sync command: {}", cmd);
-        let full_command = format!(
-            "cd {} && . {}/.local/bin/env && {}",
-            remote_full_dir, remote_home, cmd
-        );
+        let full_command = format!("cd {} && {}", remote_full_dir, cmd);
         execute_ssh_command(&remote_host, &full_command)?;
     }
 
@@ -134,7 +131,7 @@ fn main() -> Result<()> {
 
 fn get_cache_path() -> Result<PathBuf> {
     let config_dir = config_dir().context("Failed to find config directory")?;
-    let cache_dir = config_dir.join("sync-tool");
+    let cache_dir = config_dir.join("sync-rs");
     if !cache_dir.exists() {
         fs::create_dir_all(&cache_dir).context("Failed to create cache directory")?;
     }

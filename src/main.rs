@@ -112,11 +112,11 @@ fn main() -> Result<()> {
 
     // Sync main directory with .gitignore filtering
     let destination = format!("{}:{}", remote_host, remote_full_dir);
-    sync_directory(".", &destination, Some(":- .gitignore"))?;
+    sync_directory(".", &destination, Some(":- .gitignore"), true)?;
 
     // Sync additional paths
     for path in &override_paths {
-        sync_directory(path, &destination, None)?;
+        sync_directory(path, &destination, None, false)?;
     }
 
     // Execute post-sync command if specified
@@ -193,9 +193,18 @@ fn get_remote_home(remote_host: &str) -> Result<String> {
     Ok(home)
 }
 
-fn sync_directory(source: &str, destination: &str, filter: Option<&str>) -> Result<()> {
+fn sync_directory(
+    source: &str,
+    destination: &str,
+    filter: Option<&str>,
+    delete: bool,
+) -> Result<()> {
     let mut cmd = Command::new("rsync");
-    cmd.args(["-azP", "--delete"]);
+    cmd.args(["-azP"]);
+
+    if delete {
+        cmd.args(["--delete"]);
+    }
 
     if let Some(f) = filter {
         cmd.args(["--filter", f]);

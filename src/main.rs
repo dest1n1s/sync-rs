@@ -24,6 +24,10 @@ struct Args {
     /// Post-sync command to execute
     #[arg(short, long)]
     post_command: Option<String>,
+
+    /// Open an interactive shell in the remote directory after syncing
+    #[arg(short, long)]
+    shell: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -124,6 +128,15 @@ fn main() -> Result<()> {
         println!("Executing post-sync command: {}", cmd);
         let full_command = format!("cd {} && {}", remote_full_dir, cmd);
         execute_ssh_command(&remote_host, &full_command)?;
+    }
+
+    // Open interactive shell if requested
+    if args.shell {
+        println!(
+            "Opening interactive shell in {}:{}",
+            remote_host, remote_full_dir
+        );
+        open_remote_shell(&remote_host, &remote_full_dir)?;
     }
 
     Ok(())
@@ -230,6 +243,21 @@ fn execute_ssh_command(host: &str, command: &str) -> Result<()> {
 
     if !status.success() {
         anyhow::bail!("SSH command failed with exit code: {:?}", status.code());
+    }
+
+    Ok(())
+}
+
+fn open_remote_shell(host: &str, directory: &str) -> Result<()> {
+    let status = Command::new("ssh")
+        .arg("-t") // Force pseudo-terminal allocation for interactive shell
+        .arg(host)
+        .arg(format!("cd {} && exec $SHELL -l", directory))
+        .status()
+        .context("Failed to open remote shell")?;
+
+    if !status.success() {
+        anyhow::bail!("Remote shell exited with code: {:?}", status.code());
     }
 
     Ok(())

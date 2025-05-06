@@ -22,16 +22,4 @@ git push origin --tags
 # Publish to crates.io
 cargo publish
 
-# Update AUR package
-if command -v makepkg >/dev/null 2>&1; then
-  echo "Updating AUR package..."
-  ./contrib/aur/update-aur.sh $1
-else
-  echo "makepkg not found, skipping AUR package update"
-fi
-
-# Update Homebrew formula
-echo "Updating Homebrew formula..."
-./contrib/homebrew/update-homebrew.sh $1
-
 echo "Release v$1 completed successfully!"

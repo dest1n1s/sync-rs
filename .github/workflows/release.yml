@@ -81,7 +81,7 @@ jobs:
           sudo apt-get install -y curl jq
 
       - name: Update AUR package
-        if: github.repository_owner == 'Dest1n1s'
+        if: github.repository_owner == 'dest1n1s'
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
@@ -100,7 +100,7 @@ jobs:
           fi
 
       - name: Update Homebrew formula
-        if: github.repository_owner == 'Dest1n1s'
+        if: github.repository_owner == 'dest1n1s'
         env:
           HOMEBREW_GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         run: |

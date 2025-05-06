@@ -3,45 +3,111 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        target: [x86_64-unknown-linux-gnu]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: linux-x86_64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            name: linux-aarch64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: macos-aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x86_64
+            extension: .exe
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: ${{ matrix.target }}
           override: true
-      
+
+      - name: Install cross-compilation tools (if needed)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Build Release
         uses: actions-rs/cargo@v1
         with:
           command: build
           args: --release --target ${{ matrix.target }}
-          
+          use-cross: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
+
       - name: Package Artifacts
         run: |
-          mkdir release
-          case ${{ matrix.target }} in
-            *windows*)
-              cp target/${{ matrix.target }}/release/sync-rs.exe release/
-              ;;
-            *)
-              cp target/${{ matrix.target }}/release/sync-rs release/
-              ;;
-          esac
-          
+          mkdir -p release
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cp target/${{ matrix.target }}/release/sync-rs${{ matrix.extension || '' }} release/sync-rs-${{ matrix.name }}${{ matrix.extension || '' }}
+          else
+            cp target/${{ matrix.target }}/release/sync-rs${{ matrix.extension || '' }} release/sync-rs-${{ matrix.name }}${{ matrix.extension || '' }}
+          fi
+
       - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
           files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up environment
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+
+      - name: Update AUR package
+        if: github.repository_owner == 'Dest1n1s'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -n "$AUR_SSH_PRIVATE_KEY" ]; then
+            mkdir -p ~/.ssh
+            echo "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+            chmod 600 ~/.ssh/aur
+            cat >> ~/.ssh/config << EOF
+            Host aur.archlinux.org
+              IdentityFile ~/.ssh/aur
+              User aur
+            EOF
+            ./contrib/aur/update-aur.sh $VERSION
+          else
+            echo "AUR_SSH_PRIVATE_KEY not set, skipping AUR update"
+          fi
+
+      - name: Update Homebrew formula
+        if: github.repository_owner == 'Dest1n1s'
+        env:
+          HOMEBREW_GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+        run: |
+          if [ -n "$HOMEBREW_GITHUB_TOKEN" ]; then
+            git config --global user.email "github-actions@github.com"
+            git config --global user.name "GitHub Actions"
+            ./contrib/homebrew/update-homebrew.sh $VERSION
+          else
+            echo "HOMEBREW_GITHUB_TOKEN not set, skipping Homebrew update"
+          fi

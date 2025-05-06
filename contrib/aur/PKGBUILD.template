@@ -1,0 +1,24 @@
+# Maintainer: Dest1n1s <dest1nis2022@gmail.com>
+
+pkgname=sync-rs
+pkgver=__VERSION__
+pkgrel=1
+pkgdesc="A CLI tool to sync files between directories"
+arch=('x86_64')
+url="https://github.com/dest1n1s/sync-rs"
+license=('MIT')
+depends=('gcc-libs')
+makedepends=('cargo')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/Dest1n1s/sync-rs/archive/v$pkgver.tar.gz")
+sha256sums=('__SHA256__')
+
+build() {
+  cd "$pkgname-$pkgver"
+  cargo build --release --locked
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+  install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+} 

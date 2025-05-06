@@ -1,0 +1,18 @@
+class SyncRs < Formula
+  desc "A CLI tool to sync files between directories"
+  homepage "https://github.com/Dest1n1s/sync-rs"
+  url "https://github.com/Dest1n1s/sync-rs/archive/v__VERSION__.tar.gz"
+  sha256 "__SHA256__"
+  license "MIT"
+
+  depends_on "rust" => :build
+
+  def install
+    system "cargo", "build", "--release", "--locked"
+    bin.install "target/release/sync-rs"
+  end
+
+  test do
+    system "#{bin}/sync-rs", "--version"
+  end
+end 

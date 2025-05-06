@@ -74,6 +74,8 @@ pkgname = sync-rs
 EOF
 
 # Commit and push
+git config --global user.email "github-actions@github.com"
+git config --global user.name "GitHub Actions"
 git add PKGBUILD .SRCINFO
 git commit -m "Update to v${VERSION}"
 

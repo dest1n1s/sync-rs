@@ -81,7 +81,7 @@ jobs:
             mkdir -p ~/.ssh
             echo "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
             chmod 600 ~/.ssh/aur
-            cat >> ~/.ssh/config << EOF
+            cat > ~/.ssh/config << 'EOF'
             Host aur.archlinux.org
               IdentityFile ~/.ssh/aur
               User aur

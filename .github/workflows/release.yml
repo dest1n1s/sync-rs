@@ -78,14 +78,7 @@ jobs:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           if [ -n "$AUR_SSH_PRIVATE_KEY" ]; then
-            mkdir -p ~/.ssh
-            echo "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
-            chmod 600 ~/.ssh/aur
-            cat > ~/.ssh/config << 'EOF'
-            Host aur.archlinux.org
-              IdentityFile ~/.ssh/aur
-              User aur
-            EOF
+            ./contrib/aur/setup-aur-ssh.sh "$AUR_SSH_PRIVATE_KEY"
             ./contrib/aur/update-aur.sh $VERSION
           else
             echo "AUR_SSH_PRIVATE_KEY not set, skipping AUR update"
@@ -97,8 +90,7 @@ jobs:
           HOMEBREW_GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         run: |
           if [ -n "$HOMEBREW_GITHUB_TOKEN" ]; then
-            git config --global user.email "github-actions@github.com"
-            git config --global user.name "GitHub Actions"
+            ./contrib/homebrew/setup-git-auth.sh "$HOMEBREW_GITHUB_TOKEN"
             ./contrib/homebrew/update-homebrew.sh $VERSION
           else
             echo "HOMEBREW_GITHUB_TOKEN not set, skipping Homebrew update"

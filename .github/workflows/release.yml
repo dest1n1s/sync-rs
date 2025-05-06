@@ -23,10 +23,6 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             name: macos-aarch64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            name: windows-x86_64
-            extension: .exe
     steps:
       - uses: actions/checkout@v4
 
@@ -53,11 +49,7 @@ jobs:
       - name: Package Artifacts
         run: |
           mkdir -p release
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cp target/${{ matrix.target }}/release/sync-rs${{ matrix.extension || '' }} release/sync-rs-${{ matrix.name }}${{ matrix.extension || '' }}
-          else
-            cp target/${{ matrix.target }}/release/sync-rs${{ matrix.extension || '' }} release/sync-rs-${{ matrix.name }}${{ matrix.extension || '' }}
-          fi
+          cp target/${{ matrix.target }}/release/sync-rs release/sync-rs-${{ matrix.name }}
 
       - name: Upload Release
         uses: softprops/action-gh-release@v1

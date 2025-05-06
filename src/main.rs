@@ -8,6 +8,10 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// This application requires a Unix-like environment
+#[cfg(windows)]
+compile_error!("This application does not support Windows. Please use Linux or macOS.");
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {

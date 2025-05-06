@@ -15,11 +15,12 @@ mkdir -p ~/.ssh
 echo "$SSH_KEY" > ~/.ssh/aur
 chmod 600 ~/.ssh/aur
 
-# Create SSH config file
+# Create SSH config file with StrictHostKeyChecking disabled
 cat > ~/.ssh/config << EOF
 Host aur.archlinux.org
   IdentityFile ~/.ssh/aur
   User aur
+  StrictHostKeyChecking no
 EOF
 
 echo "AUR SSH configuration completed" 

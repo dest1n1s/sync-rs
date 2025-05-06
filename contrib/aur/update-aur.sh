@@ -51,17 +51,27 @@ fi
 # Update files
 cp "${WORKDIR}/PKGBUILD" "${WORKDIR}/repo/"
 
-# Update .SRCINFO
+# Create .SRCINFO manually instead of using makepkg
 cd "${WORKDIR}/repo"
-if ! command -v makepkg &>/dev/null; then
-  echo "Error: makepkg command not found. Please install it."
-  exit 1
-fi
+echo "Generating .SRCINFO manually..."
 
-if ! makepkg --printsrcinfo > .SRCINFO; then
-  echo "Error: Failed to generate .SRCINFO"
-  exit 1
-fi
+cat > .SRCINFO << EOF
+pkgbase = sync-rs
+	pkgdesc = A CLI tool to sync files between directories
+	pkgver = ${VERSION}
+	pkgrel = 1
+	url = https://github.com/dest1n1s/sync-rs
+	arch = x86_64
+	license = MIT
+	makedepends = cargo
+	depends = gcc-libs
+	depends = rsync
+	depends = openssh
+	source = sync-rs-${VERSION}.tar.gz::https://github.com/Dest1n1s/sync-rs/archive/v${VERSION}.tar.gz
+	sha256sums = ${SHA256}
+
+pkgname = sync-rs
+EOF
 
 # Commit and push
 git add PKGBUILD .SRCINFO

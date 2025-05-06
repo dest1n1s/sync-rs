@@ -70,7 +70,7 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           sudo apt-get update
-          sudo apt-get install -y curl jq
+          sudo apt-get install -y curl jq openssh-client git
 
       - name: Update AUR package
         if: github.repository_owner == 'dest1n1s'
@@ -78,8 +78,16 @@ jobs:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           if [ -n "$AUR_SSH_PRIVATE_KEY" ]; then
+            # Setup SSH
             ./contrib/aur/setup-aur-ssh.sh "$AUR_SSH_PRIVATE_KEY"
-            ./contrib/aur/update-aur.sh $VERSION
+            
+            # Verify SSH connection
+            echo "Verifying SSH connection to AUR..."
+            ssh -T git@aur.archlinux.org || true
+            
+            # Run with verbose output for debugging
+            echo "Running AUR update script..."
+            bash -x ./contrib/aur/update-aur.sh $VERSION
           else
             echo "AUR_SSH_PRIVATE_KEY not set, skipping AUR update"
           fi
@@ -90,8 +98,12 @@ jobs:
           HOMEBREW_GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
         run: |
           if [ -n "$HOMEBREW_GITHUB_TOKEN" ]; then
+            # Setup Git authentication
             ./contrib/homebrew/setup-git-auth.sh "$HOMEBREW_GITHUB_TOKEN"
-            ./contrib/homebrew/update-homebrew.sh $VERSION
+            
+            # Run with verbose output for debugging
+            echo "Running Homebrew update script..."
+            bash -x ./contrib/homebrew/update-homebrew.sh $VERSION
           else
             echo "HOMEBREW_GITHUB_TOKEN not set, skipping Homebrew update"
           fi

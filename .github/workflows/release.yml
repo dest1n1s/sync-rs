@@ -58,7 +58,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  package:
+  package-aur:
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
@@ -70,40 +70,59 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           sudo apt-get update
-          sudo apt-get install -y curl jq openssh-client git
+          sudo apt-get install -y curl jq
 
-      - name: Update AUR package
-        if: github.repository_owner == 'dest1n1s'
-        env:
-          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+      - name: Generate PKGBUILD
         run: |
-          if [ -n "$AUR_SSH_PRIVATE_KEY" ]; then
-            # Setup SSH
-            ./contrib/aur/setup-aur-ssh.sh "$AUR_SSH_PRIVATE_KEY"
-            
-            # Verify SSH connection
-            echo "Verifying SSH connection to AUR..."
-            ssh -T git@aur.archlinux.org || true
-            
-            # Run with verbose output for debugging
-            echo "Running AUR update script..."
-            bash -x ./contrib/aur/update-aur.sh $VERSION
-          else
-            echo "AUR_SSH_PRIVATE_KEY not set, skipping AUR update"
-          fi
+          # Download the source tarball to calculate its SHA256
+          echo "Downloading source tarball..."
+          TARBALL_URL="https://github.com/Dest1n1s/sync-rs/archive/v${VERSION}.tar.gz"
+          curl -sL "${TARBALL_URL}" -o "sync-rs-${VERSION}.tar.gz"
+          SHA256=$(sha256sum "sync-rs-${VERSION}.tar.gz" | cut -d' ' -f1)
 
-      - name: Update Homebrew formula
-        if: github.repository_owner == 'dest1n1s'
-        env:
-          HOMEBREW_GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
-        run: |
-          if [ -n "$HOMEBREW_GITHUB_TOKEN" ]; then
-            # Setup Git authentication
-            ./contrib/homebrew/setup-git-auth.sh "$HOMEBREW_GITHUB_TOKEN"
-            
-            # Run with verbose output for debugging
-            echo "Running Homebrew update script..."
-            bash -x ./contrib/homebrew/update-homebrew.sh $VERSION
-          else
-            echo "HOMEBREW_GITHUB_TOKEN not set, skipping Homebrew update"
-          fi
+          # Create PKGBUILD from template
+          echo "Creating PKGBUILD..."
+          cat contrib/aur/PKGBUILD.template | \
+            sed "s/__VERSION__/${VERSION}/g" | \
+            sed "s/__SHA256__/${SHA256}/g" > PKGBUILD
+
+      - name: Publish AUR package
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: sync-rs
+          pkgbuild: ./PKGBUILD
+          commit_username: Dest1n1
+          commit_email: dest1nis2022@gmail.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update AUR package
+          ssh_keyscan_types: rsa,ecdsa,ed25519
+
+  # package-homebrew:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: startsWith(github.ref, 'refs/tags/v')
+  #   steps:
+  #     - uses: actions/checkout@v4
+
+  #     - name: Set up environment
+  #       run: |
+  #         VERSION=${GITHUB_REF#refs/tags/v}
+  #         echo "VERSION=$VERSION" >> $GITHUB_ENV
+  #         sudo apt-get update
+  #         sudo apt-get install -y curl jq git
+
+  #     - name: Update Homebrew formula
+  #       if: github.repository_owner == 'dest1n1s'
+  #       env:
+  #         HOMEBREW_GITHUB_TOKEN: ${{ secrets.HOMEBREW_GITHUB_TOKEN }}
+  #       run: |
+  #         if [ -n "$HOMEBREW_GITHUB_TOKEN" ]; then
+  #           # Setup Git authentication
+  #           ./contrib/homebrew/setup-git-auth.sh "$HOMEBREW_GITHUB_TOKEN"
+
+  #           # Run with verbose output for debugging
+  #           echo "Running Homebrew update script..."
+  #           bash -x ./contrib/homebrew/update-homebrew.sh $VERSION
+  #         else
+  #           echo "HOMEBREW_GITHUB_TOKEN not set, skipping Homebrew update"
+  #         fi

@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "sync-rs"
-version = "1.2.7"
+version = "1.2.8"
 dependencies = [
  "anyhow",
  "clap",

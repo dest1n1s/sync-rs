@@ -1,11 +1,47 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release"
+        required: true
 
 jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install cargo-edit
+        run: cargo install cargo-edit
+
+      - name: Run tests
+        run: cargo test --all-features
+
+      - name: Set version
+        run: cargo set-version ${{ github.event.inputs.version }}
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "chore: Release v${{ github.event.inputs.version }}"
+          git tag v${{ github.event.inputs.version }} -m "Release v${{ github.event.inputs.version }}"
+          git push origin HEAD:main --tags
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --token $CARGO_REGISTRY_TOKEN
+
   build:
     runs-on: ${{ matrix.os }}
     strategy:

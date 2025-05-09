@@ -1,6 +1,6 @@
 [package]
 name = "sync-rs"
-version = "1.2.16"
+version = "1.2.17"
 edition = "2021"
 description = "A CLI tool to sync files between directories"
 authors = ["Dest1n1s <dest1nis2022@gmail.com>"]

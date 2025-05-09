@@ -94,7 +94,6 @@ fn main() -> Result<()> {
                         entry.override_paths.clone(),
                         entry.post_sync_command.clone(),
                     );
-                    save_cache(&cache_path, &cache)?;
                     result
                 }
                 None => {
@@ -107,11 +106,11 @@ fn main() -> Result<()> {
                         post_sync_command: args.post_command.clone(),
                     };
                     cache.insert(current_dir_str.clone(), entry);
-                    save_cache(&cache_path, &cache)?;
                     (h, d, args.override_path, args.post_command)
                 }
             }
         };
+    save_cache(&cache_path, &cache)?;
 
     // Get remote home directory
     let remote_home = get_remote_home(&remote_host)?;

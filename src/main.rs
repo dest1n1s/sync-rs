@@ -1,12 +1,11 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use dirs::config_dir;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs::{self, File};
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
 use std::process::Command;
+
+mod cache;
+use cache::{get_cache_path, MigrationManager, RemoteMap};
 
 // This application requires a Unix-like environment
 #[cfg(windows)]
@@ -32,10 +31,23 @@ struct Args {
     /// Open an interactive shell in the remote directory after syncing
     #[arg(short, long)]
     shell: bool,
+
+    /// Name for this remote configuration (used when managing multiple remotes)
+    #[arg(short, long)]
+    name: Option<String>,
+
+    /// List all remote configurations for the current directory
+    #[arg(short, long)]
+    list: bool,
+
+    /// Remove a remote configuration by name
+    #[arg(short = 'r', long)]
+    remove: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct CacheEntry {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct RemoteEntry {
+    name: String,
     remote_host: String,
     remote_dir: String,
     #[serde(default)]
@@ -47,13 +59,6 @@ struct CacheEntry {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Validate host/dir pairing
-    if (args.remote_host.is_some() || args.remote_dir.is_some())
-        && !(args.remote_host.is_some() && args.remote_dir.is_some())
-    {
-        anyhow::bail!("Both remote_host and remote_dir must be provided together");
-    }
-
     // Get current directory and cache path
     let current_dir = std::env::current_dir()?;
     let current_dir_str = current_dir
@@ -62,114 +67,187 @@ fn main() -> Result<()> {
         .to_string();
     let cache_path = get_cache_path()?;
 
-    // Read or initialize cache
-    let mut cache = read_cache(&cache_path)?;
+    // Initialize migration manager with current program version
+    let migration_manager = MigrationManager::new(env!("CARGO_PKG_VERSION").to_string());
 
-    // Determine remote configuration
-    let (remote_host, remote_dir, override_paths, post_sync_command) =
-        if let (Some(h), Some(d)) = (args.remote_host, args.remote_dir) {
-            // Create new cache entry
-            let entry = CacheEntry {
-                remote_host: h.clone(),
-                remote_dir: d.clone(),
+    // Read or initialize cache with migration support
+    let mut cache: RemoteMap = migration_manager.read_cache(&cache_path)?;
+
+    // Ensure the current directory exists in the cache
+    if !cache.contains_key(&current_dir_str) {
+        cache.insert(current_dir_str.clone(), Vec::new());
+    }
+
+    // List all remotes if requested
+    if args.list {
+        list_remotes(&cache, &current_dir_str)?;
+        return Ok(());
+    }
+
+    // Remove a remote if requested
+    if let Some(name) = args.remove {
+        remove_remote(&mut cache, &current_dir_str, &name)?;
+        migration_manager.save_cache(&cache_path, &cache)?;
+        return Ok(());
+    }
+
+    // Validate host/dir pairing if provided
+    if (args.remote_host.is_some() || args.remote_dir.is_some())
+        && !(args.remote_host.is_some() && args.remote_dir.is_some())
+    {
+        anyhow::bail!("Both remote_host and remote_dir must be provided together");
+    }
+
+    // Determine which remote to use or add new one
+    let remote_entry =
+        if let (Some(h), Some(d)) = (args.remote_host.clone(), args.remote_dir.clone()) {
+            // Create new remote entry
+            let name = args
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("{}_{}", h, d.replace('/', "_")));
+
+            let entry = RemoteEntry {
+                name: name.clone(),
+                remote_host: h,
+                remote_dir: d,
                 override_paths: args.override_path.clone(),
                 post_sync_command: args.post_command.clone(),
             };
-            cache.insert(current_dir_str.clone(), entry);
-            (h, d, args.override_path, args.post_command)
+
+            // Check if name already exists and update or add
+            let entries = cache.get_mut(&current_dir_str).unwrap();
+            if let Some(index) = entries.iter().position(|e| e.name == name) {
+                entries[index] = entry.clone();
+            } else {
+                entries.push(entry.clone());
+            }
+
+            migration_manager.save_cache(&cache_path, &cache)?;
+            entry
         } else {
-            // Use existing entry or prompt
-            match cache.get_mut(&current_dir_str) {
-                Some(entry) => {
-                    // Update existing entry with new parameters
-                    if !args.override_path.is_empty() {
-                        entry.override_paths = args.override_path.clone();
-                    }
-                    if args.post_command.is_some() {
-                        entry.post_sync_command = args.post_command.clone();
-                    }
-                    let result = (
-                        entry.remote_host.clone(),
-                        entry.remote_dir.clone(),
-                        entry.override_paths.clone(),
-                        entry.post_sync_command.clone(),
-                    );
-                    result
+            // Use existing entry
+            let entries = cache.get(&current_dir_str).unwrap();
+
+            if entries.is_empty() {
+                // Prompt for new remote info
+                let (h, d) = prompt_remote_info()?;
+                let name = args
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("{}_{}", h, d.replace('/', "_")));
+
+                let entry = RemoteEntry {
+                    name,
+                    remote_host: h,
+                    remote_dir: d,
+                    override_paths: args.override_path.clone(),
+                    post_sync_command: args.post_command.clone(),
+                };
+
+                cache.get_mut(&current_dir_str).unwrap().push(entry.clone());
+                migration_manager.save_cache(&cache_path, &cache)?;
+                entry
+            } else if entries.len() == 1 {
+                // Use the only entry
+                let mut entry = entries[0].clone();
+
+                // Update with new parameters if provided
+                if !args.override_path.is_empty() {
+                    entry.override_paths = args.override_path.clone();
+                    cache.get_mut(&current_dir_str).unwrap()[0].override_paths =
+                        args.override_path.clone();
                 }
-                None => {
-                    // Prompt for missing information
-                    let (h, d) = prompt_remote_info()?;
-                    let entry = CacheEntry {
-                        remote_host: h.clone(),
-                        remote_dir: d.clone(),
-                        override_paths: args.override_path.clone(),
-                        post_sync_command: args.post_command.clone(),
-                    };
-                    cache.insert(current_dir_str.clone(), entry);
-                    (h, d, args.override_path, args.post_command)
+
+                if args.post_command.is_some() {
+                    entry.post_sync_command = args.post_command.clone();
+                    cache.get_mut(&current_dir_str).unwrap()[0].post_sync_command =
+                        args.post_command.clone();
+                }
+
+                migration_manager.save_cache(&cache_path, &cache)?;
+                entry
+            } else {
+                // Multiple entries, prompt for selection
+                let name = match args.name.clone() {
+                    Some(name) => name,
+                    None => select_remote(entries)?,
+                };
+                let entry = entries
+                    .iter()
+                    .find(|e| e.name == name)
+                    .with_context(|| format!("Remote with name '{}' not found", name))?
+                    .clone();
+
+                // Update with new parameters if provided
+                if !args.override_path.is_empty() || args.post_command.is_some() {
+                    let mut updated_entry = entry.clone();
+
+                    if !args.override_path.is_empty() {
+                        updated_entry.override_paths = args.override_path.clone();
+                    }
+
+                    if args.post_command.is_some() {
+                        updated_entry.post_sync_command = args.post_command.clone();
+                    }
+
+                    // Update in cache
+                    if let Some(index) = cache
+                        .get_mut(&current_dir_str)
+                        .unwrap()
+                        .iter()
+                        .position(|e| e.name == name)
+                    {
+                        cache.get_mut(&current_dir_str).unwrap()[index] = updated_entry.clone();
+                        migration_manager.save_cache(&cache_path, &cache)?;
+                        updated_entry
+                    } else {
+                        entry
+                    }
+                } else {
+                    entry
                 }
             }
         };
-    save_cache(&cache_path, &cache)?;
 
     // Get remote home directory
-    let remote_home = get_remote_home(&remote_host)?;
-    let remote_full_dir = if remote_dir.starts_with('/') {
-        remote_dir.clone()
+    let remote_home = get_remote_home(&remote_entry.remote_host)?;
+    let remote_full_dir = if remote_entry.remote_dir.starts_with('/') {
+        remote_entry.remote_dir.clone()
     } else {
-        format!("{}/{}", remote_home, remote_dir)
+        format!("{}/{}", remote_home, remote_entry.remote_dir)
     };
-    println!("Syncing to {}:{}", remote_host, remote_full_dir);
+    println!(
+        "Syncing to {} ({}:{})",
+        remote_entry.name, remote_entry.remote_host, remote_full_dir
+    );
 
     // Sync main directory with .gitignore filtering
-    let destination = format!("{}:{}", remote_host, remote_full_dir);
+    let destination = format!("{}:{}", remote_entry.remote_host, remote_full_dir);
     sync_directory(".", &destination, Some(":- .gitignore"), true)?;
 
     // Sync additional paths
-    for path in &override_paths {
+    for path in &remote_entry.override_paths {
         sync_directory(path, &destination, None, false)?;
     }
 
     // Execute post-sync command if specified
-    if let Some(cmd) = post_sync_command {
+    if let Some(cmd) = remote_entry.post_sync_command {
         println!("Executing post-sync command: {}", cmd);
         let full_command = format!("cd {} && {}", remote_full_dir, cmd);
-        execute_ssh_command(&remote_host, &full_command)?;
+        execute_ssh_command(&remote_entry.remote_host, &full_command)?;
     }
 
     // Open interactive shell if requested
     if args.shell {
         println!(
             "Opening interactive shell in {}:{}",
-            remote_host, remote_full_dir
+            remote_entry.remote_host, remote_full_dir
         );
-        open_remote_shell(&remote_host, &remote_full_dir)?;
+        open_remote_shell(&remote_entry.remote_host, &remote_full_dir)?;
     }
 
     Ok(())
-}
-
-fn get_cache_path() -> Result<PathBuf> {
-    let config_dir = config_dir().context("Failed to find config directory")?;
-    let cache_dir = config_dir.join("sync-rs");
-    if !cache_dir.exists() {
-        fs::create_dir_all(&cache_dir).context("Failed to create cache directory")?;
-    }
-    Ok(cache_dir.join("cache.json"))
-}
-
-fn read_cache(cache_path: &Path) -> Result<HashMap<String, CacheEntry>> {
-    if cache_path.exists() {
-        let file = File::open(cache_path).context("Failed to open cache file")?;
-        serde_json::from_reader(file).context("Failed to parse cache file")
-    } else {
-        Ok(HashMap::new())
-    }
-}
-
-fn save_cache(cache_path: &Path, cache: &HashMap<String, CacheEntry>) -> Result<()> {
-    let file = File::create(cache_path).context("Failed to create cache file")?;
-    serde_json::to_writer_pretty(file, cache).context("Failed to write cache file")
 }
 
 fn prompt_remote_info() -> Result<(String, String)> {
@@ -188,6 +266,76 @@ fn prompt_remote_info() -> Result<(String, String)> {
         remote_host.trim().to_string(),
         remote_dir.trim().to_string(),
     ))
+}
+
+fn list_remotes(cache: &RemoteMap, current_dir: &str) -> Result<()> {
+    let empty_vec: Vec<RemoteEntry> = Vec::new();
+    let entries = cache.get(current_dir).unwrap_or(&empty_vec);
+
+    if entries.is_empty() {
+        println!("No remote configurations found for this directory.");
+        return Ok(());
+    }
+
+    println!("Remote configurations for this directory:");
+    for (i, entry) in entries.iter().enumerate() {
+        println!(
+            "{}: {} ({}:{})",
+            i + 1,
+            entry.name,
+            entry.remote_host,
+            entry.remote_dir
+        );
+    }
+
+    Ok(())
+}
+
+fn select_remote(entries: &[RemoteEntry]) -> Result<String> {
+    println!("Multiple remote configurations found. Please select one:");
+
+    for (i, entry) in entries.iter().enumerate() {
+        println!(
+            "{}: {} ({}:{})",
+            i + 1,
+            entry.name,
+            entry.remote_host,
+            entry.remote_dir
+        );
+    }
+
+    let mut selection = String::new();
+    print!("Enter selection (1-{}): ", entries.len());
+    io::stdout().flush()?;
+    io::stdin().read_line(&mut selection)?;
+
+    let index = selection
+        .trim()
+        .parse::<usize>()
+        .context("Invalid selection")?
+        - 1;
+
+    if index >= entries.len() {
+        anyhow::bail!("Selection out of range");
+    }
+
+    Ok(entries[index].name.clone())
+}
+
+fn remove_remote(cache: &mut RemoteMap, current_dir: &str, name: &str) -> Result<()> {
+    let entries = cache
+        .get_mut(current_dir)
+        .context("No remotes found for this directory")?;
+
+    let initial_len = entries.len();
+    entries.retain(|e| e.name != name);
+
+    if entries.len() == initial_len {
+        anyhow::bail!("Remote with name '{}' not found", name);
+    }
+
+    println!("Removed remote configuration '{}'", name);
+    Ok(())
 }
 
 fn get_remote_home(remote_host: &str) -> Result<String> {

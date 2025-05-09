@@ -34,6 +34,11 @@ jobs:
           target: ${{ matrix.target }}
           override: true
 
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
       - name: Install cross-compilation tools (if needed)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
@@ -71,6 +76,9 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -82,6 +90,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Cache APT packages
+        uses: actions/cache@v3
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-${{ hashFiles('**/package-aur-packages') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
 
       - name: Set up environment
         run: |
@@ -120,6 +136,15 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - uses: actions/checkout@v4
+
+  #     - name: Cache APT packages
+  #       uses: actions/cache@v3
+  #       with:
+  #         path: /var/cache/apt/archives
+  #         key: ${{ runner.os }}-apt-homebrew-${{ hashFiles('**/package-homebrew-packages') }}
+  #         restore-keys: |
+  #           ${{ runner.os }}-apt-homebrew-
+  #           ${{ runner.os }}-apt-
 
   #     - name: Set up environment
   #       run: |

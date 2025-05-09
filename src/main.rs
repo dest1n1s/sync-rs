@@ -115,7 +115,11 @@ fn main() -> Result<()> {
 
     // Get remote home directory
     let remote_home = get_remote_home(&remote_host)?;
-    let remote_full_dir = format!("{}/{}", remote_home, remote_dir);
+    let remote_full_dir = if remote_dir.starts_with('/') {
+        remote_dir.clone()
+    } else {
+        format!("{}/{}", remote_home, remote_dir)
+    };
     println!("Syncing to {}:{}", remote_host, remote_full_dir);
 
     // Sync main directory with .gitignore filtering

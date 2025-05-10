@@ -4,6 +4,7 @@ version = "1.3.2"
 edition = "2021"
 description = "A CLI tool to sync files between directories"
 authors = ["Dest1n1s <dest1nis2022@gmail.com>"]
+repository = "https://github.com/dest1n1s/sync-rs"
 license = "MIT"
 
 [lib]

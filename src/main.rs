@@ -54,7 +54,7 @@ struct Args {
     delete_override: bool,
 
     /// Set this remote as the preferred one for this directory
-    #[arg(short = 'p', long)]
+    #[arg(short = 'P', long)]
     preferred: bool,
 }
 

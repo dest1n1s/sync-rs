@@ -46,6 +46,7 @@ If multiple remotes are configured and no name is specified, you'll be prompted 
 sync-rs <remote-host> <remote-dir> -p <post-command> # Run a command after syncing
 sync-rs <remote-host> <remote-dir> -o <override-path> # Sync the override path despite the .gitignore. This is helpful to sync custom experimental files.
 sync-rs <remote-host> <remote-dir> -s # Open an interactive shell in the remote directory using ssh after syncing
+sync-rs <remote-host> <remote-dir> -d # Enable delete mode for override paths (by default, only the main directory uses --delete)
 ```
 
 ### Complete Options
@@ -55,6 +56,7 @@ Options:
   -o, --override-path <OVERRIDE_PATH>  Additional paths to sync (can specify multiple)
   -p, --post-command <POST_COMMAND>    Post-sync command to execute
   -s, --shell                          Open an interactive shell in the remote directory after syncing
+  -d, --delete-override                Enable delete mode for override paths
   -n, --name <NAME>                    Name for this remote configuration (used when managing multiple remotes)
   -l, --list                           List all remote configurations for the current directory
   -r, --remove <REMOVE>                Remove a remote configuration by name

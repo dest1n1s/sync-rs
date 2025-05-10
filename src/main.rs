@@ -48,6 +48,10 @@ struct Args {
     /// Remove a remote configuration by name
     #[arg(short = 'r', long)]
     remove: Option<String>,
+
+    /// Enable delete mode for override paths (default: disabled)
+    #[arg(short = 'd', long)]
+    delete_override: bool,
 }
 
 fn main() -> Result<()> {
@@ -98,7 +102,7 @@ fn main() -> Result<()> {
     )?;
 
     // Perform the sync operation
-    perform_sync(&remote_entry, args.shell)?;
+    perform_sync(&remote_entry, args.shell, args.delete_override)?;
 
     Ok(())
 }
@@ -222,7 +226,7 @@ fn determine_remote_config(
 }
 
 // Perform the actual sync operation
-fn perform_sync(remote_entry: &RemoteEntry, open_shell: bool) -> Result<()> {
+fn perform_sync(remote_entry: &RemoteEntry, open_shell: bool, delete_override: bool) -> Result<()> {
     // Get remote home directory
     let remote_home = get_remote_home(&remote_entry.remote_host)?;
     let remote_full_dir = if remote_entry.remote_dir.starts_with('/') {
@@ -241,7 +245,7 @@ fn perform_sync(remote_entry: &RemoteEntry, open_shell: bool) -> Result<()> {
 
     // Sync additional paths
     for path in &remote_entry.override_paths {
-        sync_directory(path, &destination, None, false)?;
+        sync_directory(path, &destination, None, delete_override)?;
     }
 
     // Execute post-sync command if specified

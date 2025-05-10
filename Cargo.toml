@@ -6,6 +6,14 @@ description = "A CLI tool to sync files between directories"
 authors = ["Dest1n1s <dest1nis2022@gmail.com>"]
 license = "MIT"
 
+[lib]
+name = "sync_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sync-rs"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.4", features = ["derive"] }

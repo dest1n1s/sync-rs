@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
-use crate::RemoteEntry;
+use crate::config::RemoteEntry;
 
 pub type RemoteMap = HashMap<String, Vec<RemoteEntry>>;
 

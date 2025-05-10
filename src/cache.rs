@@ -84,6 +84,7 @@ impl LegacyMigrator {
                 remote_dir: entry.remote_dir,
                 override_paths: entry.override_paths,
                 post_sync_command: entry.post_sync_command,
+                preferred: false,
             };
 
             new_cache.insert(dir, vec![remote_entry]);

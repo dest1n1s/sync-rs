@@ -52,6 +52,10 @@ struct Args {
     /// Enable delete mode for override paths (default: disabled)
     #[arg(short = 'd', long)]
     delete_override: bool,
+
+    /// Set this remote as the preferred one for this directory
+    #[arg(short = 'p', long)]
+    preferred: bool,
 }
 
 fn main() -> Result<()> {
@@ -128,7 +132,17 @@ fn determine_remote_config(
             remote_dir: d,
             override_paths: args.override_path.clone(),
             post_sync_command: args.post_command.clone(),
+            preferred: args.preferred,
         };
+
+        // If this is being set as preferred, unset preferred status for all other entries
+        if args.preferred {
+            if let Some(entries) = cache.get_mut(current_dir) {
+                for e in entries.iter_mut() {
+                    e.preferred = false;
+                }
+            }
+        }
 
         // Check if name already exists and update or add
         let entries = cache.get_mut(current_dir).unwrap();
@@ -156,6 +170,7 @@ fn determine_remote_config(
                 remote_dir: d,
                 override_paths: args.override_path.clone(),
                 post_sync_command: args.post_command.clone(),
+                preferred: args.preferred,
             };
 
             cache.get_mut(current_dir).unwrap().push(entry.clone());
@@ -177,14 +192,33 @@ fn determine_remote_config(
                     args.post_command.clone();
             }
 
+            if args.preferred {
+                entry.preferred = true;
+                cache.get_mut(current_dir).unwrap()[0].preferred = true;
+            }
+
             migration_manager.save_cache(cache_path, cache)?;
             entry
         } else {
-            // Multiple entries, prompt for selection
-            let name = match args.name.clone() {
-                Some(name) => name,
-                None => select_remote(entries)?,
+            // Multiple entries, check for preferred or prompt for selection
+            let name = if args.preferred {
+                // If setting preferred, use the name from args
+                args.name
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("Name required when setting preferred remote"))?
+            } else {
+                // First check for preferred remote
+                if let Some(preferred) = entries.iter().find(|e| e.preferred) {
+                    preferred.name.clone()
+                } else {
+                    // No preferred remote, use name from args or prompt
+                    match args.name.clone() {
+                        Some(name) => name,
+                        None => select_remote(entries)?,
+                    }
+                }
             };
+
             let entry = entries
                 .iter()
                 .find(|e| e.name == name)
@@ -192,7 +226,7 @@ fn determine_remote_config(
                 .clone();
 
             // Update with new parameters if provided
-            if !args.override_path.is_empty() || args.post_command.is_some() {
+            if !args.override_path.is_empty() || args.post_command.is_some() || args.preferred {
                 let mut updated_entry = entry.clone();
 
                 if !args.override_path.is_empty() {
@@ -201,6 +235,14 @@ fn determine_remote_config(
 
                 if args.post_command.is_some() {
                     updated_entry.post_sync_command = args.post_command.clone();
+                }
+
+                if args.preferred {
+                    // Unset preferred status for all other entries
+                    for e in cache.get_mut(current_dir).unwrap().iter_mut() {
+                        e.preferred = false;
+                    }
+                    updated_entry.preferred = true;
                 }
 
                 // Update in cache

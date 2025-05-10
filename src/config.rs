@@ -11,6 +11,8 @@ pub struct RemoteEntry {
     pub override_paths: Vec<String>,
     #[serde(default)]
     pub post_sync_command: Option<String>,
+    #[serde(default)]
+    pub preferred: bool,
 }
 
 pub fn prompt_remote_info() -> Result<(String, String)> {
@@ -73,10 +75,12 @@ pub fn list_remotes(cache: &crate::cache::RemoteMap, current_dir: &str) -> Resul
 
     println!("Remote configurations for this directory:");
     for (i, entry) in entries.iter().enumerate() {
+        let preferred = if entry.preferred { " (preferred)" } else { "" };
         println!(
-            "{}: {} ({}:{})",
+            "{}: {}{} ({}:{})",
             i + 1,
             entry.name,
+            preferred,
             entry.remote_host,
             entry.remote_dir
         );

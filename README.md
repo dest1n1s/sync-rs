@@ -1,93 +1,110 @@
 # sync-rs
 
-A simple repository synchronization tool written in Rust. Largely a wrapper around `git` and `rsync`. It will respect `.gitignore` files and sync the repository to a target remote directory, and remember the last sync state.
+A simple tool for syncing local directories to remote servers using rsync and SSH.
 
-## Usage
+## Features
 
-To activate interactive mode to sync the current directory to the remote directory, run:
-
-```bash
-sync-rs
-```
-
-If this is your first time running in the current directory, you'll be prompted to set up a remote configuration.
-
-### Basic Commands
-
-To sync the current directory to a remote:
-
-```bash
-sync-rs <remote-host> <remote-dir> # The remote host and directory to sync to. The remote directory is a relative path to the remote host's home directory.
-```
-
-### Multiple Remote Support
-
-You can now configure multiple remote destinations for a single local directory:
-
-```bash
-# Add a new remote with a specific name
-sync-rs <remote-host> <remote-dir> --name <remote-name>
-
-# List all configured remotes for the current directory
-sync-rs --list
-
-# Sync to a specific remote by name
-sync-rs --name <remote-name>
-
-# Remove a remote configuration
-sync-rs --remove <remote-name>
-```
-
-If multiple remotes are configured and no name is specified, you'll be prompted to select one.
-
-### Optional Flags
-
-```bash
-sync-rs <remote-host> <remote-dir> -p <post-command> # Run a command after syncing
-sync-rs <remote-host> <remote-dir> -o <override-path> # Sync the override path despite the .gitignore. This is helpful to sync custom experimental files.
-sync-rs <remote-host> <remote-dir> -s # Open an interactive shell in the remote directory using ssh after syncing
-sync-rs <remote-host> <remote-dir> -d # Enable delete mode for override paths (by default, only the main directory uses --delete)
-```
-
-### Complete Options
-
-```
-Options:
-  -o, --override-path <OVERRIDE_PATH>  Additional paths to sync (can specify multiple)
-  -p, --post-command <POST_COMMAND>    Post-sync command to execute
-  -s, --shell                          Open an interactive shell in the remote directory after syncing
-  -d, --delete-override                Enable delete mode for override paths
-  -n, --name <NAME>                    Name for this remote configuration (used when managing multiple remotes)
-  -l, --list                           List all remote configurations for the current directory
-  -r, --remove <REMOVE>                Remove a remote configuration by name
-  -h, --help                           Print help
-  -V, --version                        Print version
-```
+- Sync local directories to remote servers using rsync
+- Support for multiple remote configurations per directory
+- Automatic .gitignore filtering
+- Post-sync command execution
+- Interactive remote shell access
+- Preferred remote selection for automatic use
+- Cache-based configuration management
 
 ## Installation
-
-### General
-
-You can install `sync-rs` using `cargo` from [crates.io](https://crates.io/crates/sync-rs):
 
 ```bash
 cargo install sync-rs
 ```
 
-Note that `sync-rs` requires a Unix-like operating system, so it will not work on Windows.
+## Usage
 
-### Arch Linux
-
-You can install `sync-rs` from the AUR using your preferred AUR helper (e.g. `yay`):
+Basic usage:
 
 ```bash
-yay -S sync-rs
+sync-rs user@host remote_dir
 ```
 
-## Cache & Configuration
+### Command Line Options
 
-sync-rs stores configuration in `~/.config/sync-rs/cache.json`. The cache format is versioned and automatically migrated when you upgrade to a new version.
+- `-o, --override-path`: Additional paths to sync (can specify multiple)
+- `-c, --post-command`: Post-sync command to execute
+- `-s, --shell`: Open an interactive shell in the remote directory after syncing
+- `-n, --name`: Name for this remote configuration (used when managing multiple remotes)
+- `-l, --list`: List all remote configurations for the current directory
+- `-r, --remove`: Remove a remote configuration by name
+- `-d, --delete-override`: Enable delete mode for override paths (default: disabled)
+- `-P, --preferred`: Set this remote as the preferred one for this directory
+
+### Examples
+
+1. Sync to a remote server:
+
+```bash
+sync-rs user@host remote_dir
+```
+
+2. Sync with additional paths and post-sync command:
+
+```bash
+sync-rs user@host remote_dir -o path1 -o path2 -c "npm install"
+```
+
+3. Open an interactive shell after syncing:
+
+```bash
+sync-rs user@host remote_dir -s
+```
+
+4. Create a named remote configuration:
+
+```bash
+sync-rs user@host remote_dir -n my-remote
+```
+
+5. List all remote configurations:
+
+```bash
+sync-rs -l
+```
+
+6. Remove a remote configuration:
+
+```bash
+sync-rs -r my-remote
+```
+
+7. Set a remote as preferred:
+
+```bash
+sync-rs -n my-remote -P
+```
+
+### Preferred Remotes
+
+When you have multiple remote configurations for a directory, you can set one as preferred:
+
+1. Set a remote as preferred:
+
+```bash
+sync-rs -n my-remote -P
+```
+
+2. List remotes to see which one is preferred:
+
+```bash
+sync-rs -l
+```
+
+When running sync without specifying a remote, it will automatically use the preferred remote if one exists. If no preferred remote is set, it will prompt you to select one.
+
+## Requirements
+
+- Unix-like environment (Linux or macOS)
+- rsync
+- SSH
 
 ## License
 
-[MIT](LICENSE)
+MIT

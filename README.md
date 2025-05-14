@@ -7,7 +7,7 @@ A simple tool for syncing local directories to remote servers using rsync and SS
 - Sync local directories to remote servers using rsync
 - Support for multiple remote configurations per directory
 - Automatic .gitignore filtering
-- Additional ignore files support
+- Additional ignore patterns support
 - Post-sync command execution
 - Interactive remote shell access
 - Preferred remote selection for automatic use
@@ -37,7 +37,7 @@ sync-rs user@host remote_dir
 - `-r, --remove`: Remove a remote configuration by name
 - `-d, --delete-override`: Enable delete mode for override paths (default: disabled)
 - `-P, --preferred`: Set this remote as the preferred one for this directory
-- `-i, --ignore`: Additional ignore files to use (can specify multiple)
+- `-i, --ignore`: Patterns to ignore (can specify multiple)
 
 ### Examples
 
@@ -83,10 +83,10 @@ sync-rs -r my-remote
 sync-rs -n my-remote -P
 ```
 
-8. Sync with additional ignore files:
+8. Sync with additional ignore patterns:
 
 ```bash
-sync-rs user@host remote_dir -i .dockerignore -i .npmignore
+sync-rs user@host remote_dir -i "*.tmp" -i "build/"
 ```
 
 ### Preferred Remotes
@@ -106,6 +106,16 @@ sync-rs -l
 ```
 
 When running sync without specifying a remote, it will automatically use the preferred remote if one exists. If no preferred remote is set, it will prompt you to select one.
+
+### Ignore Patterns
+
+By default, sync-rs uses .gitignore to filter files. You can specify additional patterns to ignore:
+
+```bash
+sync-rs -i "*.tmp" -i "build/" -i "node_modules/"
+```
+
+These patterns will be used alongside .gitignore when filtering files for syncing. The patterns follow rsync's exclude format.
 
 ## Requirements
 

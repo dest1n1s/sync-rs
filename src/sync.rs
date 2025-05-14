@@ -38,7 +38,10 @@ pub fn sync_directory(
     }
 
     if let Some(f) = filter {
-        cmd.args(["--filter", f]);
+        // Handle multiple filters separated by commas
+        for filter_rule in f.split(',') {
+            cmd.args(["--filter", filter_rule.trim()]);
+        }
     }
 
     cmd.args([source, destination]);

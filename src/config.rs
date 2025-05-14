@@ -13,6 +13,8 @@ pub struct RemoteEntry {
     pub post_sync_command: Option<String>,
     #[serde(default)]
     pub preferred: bool,
+    #[serde(default)]
+    pub ignore_files: Vec<String>,
 }
 
 pub fn prompt_remote_info() -> Result<(String, String)> {

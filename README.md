@@ -7,6 +7,7 @@ A simple tool for syncing local directories to remote servers using rsync and SS
 - Sync local directories to remote servers using rsync
 - Support for multiple remote configurations per directory
 - Automatic .gitignore filtering
+- Additional ignore files support
 - Post-sync command execution
 - Interactive remote shell access
 - Preferred remote selection for automatic use
@@ -36,6 +37,7 @@ sync-rs user@host remote_dir
 - `-r, --remove`: Remove a remote configuration by name
 - `-d, --delete-override`: Enable delete mode for override paths (default: disabled)
 - `-P, --preferred`: Set this remote as the preferred one for this directory
+- `-i, --ignore`: Additional ignore files to use (can specify multiple)
 
 ### Examples
 
@@ -79,6 +81,12 @@ sync-rs -r my-remote
 
 ```bash
 sync-rs -n my-remote -P
+```
+
+8. Sync with additional ignore files:
+
+```bash
+sync-rs user@host remote_dir -i .dockerignore -i .npmignore
 ```
 
 ### Preferred Remotes

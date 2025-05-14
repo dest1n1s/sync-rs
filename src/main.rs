@@ -56,6 +56,10 @@ struct Args {
     /// Set this remote as the preferred one for this directory
     #[arg(short = 'P', long)]
     preferred: bool,
+
+    /// Additional ignore files to use (can specify multiple)
+    #[arg(short = 'i', long = "ignore")]
+    ignore_files: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -133,6 +137,7 @@ fn determine_remote_config(
             override_paths: args.override_path.clone(),
             post_sync_command: args.post_command.clone(),
             preferred: args.preferred,
+            ignore_files: args.ignore_files.clone(),
         };
 
         // If this is being set as preferred, unset preferred status for all other entries
@@ -171,6 +176,7 @@ fn determine_remote_config(
                 override_paths: args.override_path.clone(),
                 post_sync_command: args.post_command.clone(),
                 preferred: args.preferred,
+                ignore_files: args.ignore_files.clone(),
             };
 
             cache.get_mut(current_dir).unwrap().push(entry.clone());
@@ -195,6 +201,11 @@ fn determine_remote_config(
             if args.preferred {
                 entry.preferred = true;
                 cache.get_mut(current_dir).unwrap()[0].preferred = true;
+            }
+
+            if !args.ignore_files.is_empty() {
+                entry.ignore_files = args.ignore_files.clone();
+                cache.get_mut(current_dir).unwrap()[0].ignore_files = args.ignore_files.clone();
             }
 
             migration_manager.save_cache(cache_path, cache)?;
@@ -226,7 +237,11 @@ fn determine_remote_config(
                 .clone();
 
             // Update with new parameters if provided
-            if !args.override_path.is_empty() || args.post_command.is_some() || args.preferred {
+            if !args.override_path.is_empty()
+                || args.post_command.is_some()
+                || args.preferred
+                || !args.ignore_files.is_empty()
+            {
                 let mut updated_entry = entry.clone();
 
                 if !args.override_path.is_empty() {
@@ -243,6 +258,10 @@ fn determine_remote_config(
                         e.preferred = false;
                     }
                     updated_entry.preferred = true;
+                }
+
+                if !args.ignore_files.is_empty() {
+                    updated_entry.ignore_files = args.ignore_files.clone();
                 }
 
                 // Update in cache
@@ -281,9 +300,21 @@ fn perform_sync(remote_entry: &RemoteEntry, open_shell: bool, delete_override: b
         remote_entry.name, remote_entry.remote_host, remote_full_dir
     );
 
-    // Sync main directory with .gitignore filtering
+    // Sync main directory with .gitignore filtering and any additional ignore files
     let destination = format!("{}:{}", remote_entry.remote_host, remote_full_dir);
-    sync_directory(".", &destination, Some(":- .gitignore"), true)?;
+
+    // Start with .gitignore filter
+    let mut filter_strings = vec![String::from(":- .gitignore")];
+
+    // Add additional ignore files
+    for ignore_file in &remote_entry.ignore_files {
+        filter_strings.push(format!(":- {}", ignore_file));
+    }
+
+    // Join filters with commas for rsync
+    let filter_string = filter_strings.join(",");
+
+    sync_directory(".", &destination, Some(&filter_string), true)?;
 
     // Sync additional paths
     for path in &remote_entry.override_paths {

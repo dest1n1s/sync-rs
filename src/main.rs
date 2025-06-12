@@ -127,8 +127,17 @@ fn determine_remote_config(
         (args.remote_host.clone(), args.remote_dir.clone())
     {
         // Create new remote entry with name based on just the host
-        let default_name = generate_unique_name(&h, cache, current_dir);
-        let name = args.name.clone().unwrap_or(default_name);
+        let name = if let Some(name) = args.name.as_ref() {
+            name.clone()
+        } else if let Some(entry) = cache.get(current_dir).and_then(|entries| {
+            entries
+                .iter()
+                .find(|e| e.remote_host == h && e.remote_dir == d)
+        }) {
+            entry.name.clone()
+        } else {
+            generate_unique_name(&h, cache, current_dir)
+        };
 
         let entry = RemoteEntry {
             name: name.clone(),
@@ -219,15 +228,12 @@ fn determine_remote_config(
                     .clone()
                     .ok_or_else(|| anyhow::anyhow!("Name required when setting preferred remote"))?
             } else {
-                // First check for preferred remote
-                if let Some(preferred) = entries.iter().find(|e| e.preferred) {
+                if let Some(name) = args.name.clone() {
+                    name
+                } else if let Some(preferred) = entries.iter().find(|e| e.preferred) {
                     preferred.name.clone()
                 } else {
-                    // No preferred remote, use name from args or prompt
-                    match args.name.clone() {
-                        Some(name) => name,
-                        None => select_remote(entries)?,
-                    }
+                    select_remote(entries)?
                 }
             };
 

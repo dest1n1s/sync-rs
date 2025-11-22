@@ -30,7 +30,7 @@ sync-rs user@host remote_dir
 ### Command Line Options
 
 - `-o, --override-path`: Additional paths to sync (can specify multiple)
-- `-c, --post-command`: Post-sync command to execute
+- `-p, --post-command`: Post-sync command to execute
 - `-s, --shell`: Open an interactive shell in the remote directory after syncing
 - `-n, --name`: Name for this remote configuration (used when managing multiple remotes)
 - `-l, --list`: List all remote configurations for the current directory
@@ -50,7 +50,7 @@ sync-rs user@host remote_dir
 2. Sync with additional paths and post-sync command:
 
 ```bash
-sync-rs user@host remote_dir -o path1 -o path2 -c "npm install"
+sync-rs user@host remote_dir -o path1 -o path2 -p "npm install"
 ```
 
 3. Open an interactive shell after syncing:

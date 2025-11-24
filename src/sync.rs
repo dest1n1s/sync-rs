@@ -1,6 +1,45 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+fn check_rsync_version() -> Result<()> {
+    let output = Command::new("rsync")
+        .arg("--version")
+        .output()
+        .context("Failed to execute rsync --version")?;
+
+    if !output.status.success() {
+        anyhow::bail!("Failed to get rsync version");
+    }
+
+    let version_output = String::from_utf8_lossy(&output.stdout);
+    
+    // Parse version from output like "rsync  version 3.2.7  protocol version 31"
+    let version_line = version_output
+        .lines()
+        .next()
+        .context("No version information found")?;
+    
+    let version_str = version_line
+        .split_whitespace()
+        .nth(2)
+        .context("Could not parse rsync version")?;
+    
+    let major_version = version_str
+        .split('.')
+        .next()
+        .and_then(|v| v.parse::<u32>().ok())
+        .context("Could not parse major version number")?;
+    
+    if major_version < 3 {
+        anyhow::bail!(
+            "rsync version {} is not supported. Please upgrade to version > 3.0",
+            version_str
+        );
+    }
+    
+    Ok(())
+}
+
 pub fn get_remote_home(remote_host: &str) -> Result<String> {
     let output = Command::new("ssh")
         .arg(remote_host)
@@ -30,6 +69,9 @@ pub fn sync_directory(
     filter: Option<&str>,
     delete: bool,
 ) -> Result<()> {
+    // Ensure rsync version is greater than 3
+    check_rsync_version()?;
+    
     let mut cmd = Command::new("rsync");
     cmd.args(["-azP"]);
 

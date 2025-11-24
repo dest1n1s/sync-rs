@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-      - main
+      - master
 
 permissions:
   contents: write
@@ -18,3 +18,4 @@ jobs:
         with:
           release-type: rust
           skip-github-release: true
+          target-branch: master

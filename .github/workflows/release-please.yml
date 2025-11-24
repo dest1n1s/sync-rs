@@ -17,5 +17,4 @@ jobs:
       - uses: googleapis/release-please-action@v4
         with:
           release-type: rust
-          skip-github-release: true
           target-branch: master

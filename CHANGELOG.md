@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/dest1n1s/sync-rs/compare/v1.5.0...v1.6.0) (2026-09-12)
+
+
+### Features
+
+* add -v/-q verbosity and consistent status output ([e18a811](https://github.com/dest1n1s/sync-rs/commit/e18a811e9ce0ff69caab0155da641be4c1061083))
+* sync worktrees and branches to their own remote directories ([004dfaa](https://github.com/dest1n1s/sync-rs/commit/004dfaaa1819450cd8846d572c6634270453d436))
+
 ## [1.5.0](https://github.com/dest1n1s/sync-rs/compare/v1.4.0...v1.5.0) (2026-09-12)
 
 

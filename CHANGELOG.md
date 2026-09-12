@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/dest1n1s/sync-rs/compare/v1.6.0...v1.6.1) (2026-09-12)
+
+
+### Features
+
+* add --config-path and --list-all ([1b7c0ed](https://github.com/dest1n1s/sync-rs/commit/1b7c0eda2a578a2b502e658509f00ca46bcb348c))
+
 ## [1.6.0](https://github.com/dest1n1s/sync-rs/compare/v1.5.0...v1.6.0) (2026-09-12)
 
 

@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use log::debug;
 use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -80,8 +81,18 @@ impl Location {
             worktrees: parse_worktrees(&String::from_utf8_lossy(&output.stdout)),
         };
         let Some(current) = repo.containing(&canonical) else {
+            debug!(
+                "{} is in no worktree of its repository",
+                canonical.display()
+            );
             return Ok(Self::plain(cwd));
         };
+        debug!(
+            "{} is in worktree {} of {}",
+            canonical.display(),
+            repo.worktrees[current].path.display(),
+            repo.main().path.display()
+        );
         let rel = canonical
             .strip_prefix(&repo.worktrees[current].path)
             .unwrap()
@@ -113,6 +124,7 @@ impl Location {
             return Ok(Target {
                 source: self.cwd.clone(),
                 suffix: None,
+                label: String::from("working tree"),
                 temp: None,
             });
         };
@@ -127,9 +139,15 @@ impl Location {
                     .to_string_lossy()
                     .into_owned(),
             });
+            let label = match (&suffix, &current.branch) {
+                (None, _) => String::from("working tree"),
+                (Some(_), Some(branch)) => format!("worktree on {branch}"),
+                (Some(_), None) => String::from("detached worktree"),
+            };
             return Ok(Target {
                 source: self.cwd.clone(),
                 suffix,
+                label,
                 temp: None,
             });
         };
@@ -143,9 +161,11 @@ impl Location {
                 );
             }
             let is_main = std::ptr::eq(worktree, context.repo.main());
+            debug!("{branch} is checked out in {}", worktree.path.display());
             return Ok(Target {
                 source,
                 suffix: (!is_main).then(|| suffix_for(branch)),
+                label: format!("branch {branch}"),
                 temp: None,
             });
         }
@@ -157,6 +177,7 @@ impl Location {
         Ok(Target {
             source,
             suffix: Some(suffix_for(branch)),
+            label: format!("branch {branch} (temporary checkout)"),
             temp: Some(temp),
         })
     }
@@ -206,6 +227,8 @@ impl Location {
 pub struct Target {
     pub source: PathBuf,
     pub suffix: Option<String>,
+    /// How to refer to the source in status output.
+    pub label: String,
     #[allow(dead_code)]
     temp: Option<TempWorktree>,
 }
@@ -273,6 +296,7 @@ impl TempWorktree {
                 String::from_utf8_lossy(&output.stderr).trim()
             );
         }
+        debug!("checked out {branch} into {}", path.display());
         Ok(Self {
             repo: repo.to_path_buf(),
             path,
@@ -282,6 +306,7 @@ impl TempWorktree {
 
 impl Drop for TempWorktree {
     fn drop(&mut self) {
+        debug!("removing temporary checkout {}", self.path.display());
         let _ = Command::new("git")
             .arg("-C")
             .arg(&self.repo)

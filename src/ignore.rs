@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use log::{debug, trace};
 use std::ffi::OsStr;
 use std::io::ErrorKind;
 use std::os::unix::ffi::OsStrExt;
@@ -42,6 +43,10 @@ pub fn git_ignored_paths(root: &Path) -> Result<Option<Vec<Vec<u8>>>> {
     };
     // Git reports an ignored root as a lone `./` and never looks inside it.
     if probe.stdout.trim_ascii() != b"true" || ignored.iter().any(|entry| entry == b"./") {
+        debug!(
+            "{} is not a work tree of its own; evaluating .gitignore files against a scratch index",
+            repo.dir.display()
+        );
         repo.scratch = Some(ScratchRepo::create()?);
         ignored = repo.ls_files(IGNORED)?;
     }
@@ -69,9 +74,16 @@ fn collect(
         if entry.ends_with(b"/") {
             excluded_dir = Some(entry.clone());
         }
-        out.push(exclude_pattern(prefix, &entry));
+        let pattern = exclude_pattern(prefix, &entry);
+        trace!("exclude {}", String::from_utf8_lossy(&pattern));
+        out.push(pattern);
     }
     for nested in repo.nested_repos()? {
+        debug!(
+            "nested repository {}{}",
+            String::from_utf8_lossy(prefix),
+            String::from_utf8_lossy(&nested)
+        );
         let sub = Repo {
             dir: repo.dir.join(OsStr::from_bytes(&nested)),
             scratch: None,
@@ -133,12 +145,19 @@ impl Repo {
                 String::from_utf8_lossy(&output.stderr).trim()
             );
         }
-        Ok(output
+        let entries: Vec<Vec<u8>> = output
             .stdout
             .split(|&b| b == 0)
             .filter(|entry| !entry.is_empty())
             .map(<[u8]>::to_vec)
-            .collect())
+            .collect();
+        debug!(
+            "git ls-files {} in {}: {} entries",
+            args.join(" "),
+            self.dir.display(),
+            entries.len()
+        );
+        Ok(entries)
     }
 
     /// Directories holding a repository of their own: submodules (gitlinks in the index) and

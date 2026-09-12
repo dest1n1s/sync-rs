@@ -48,7 +48,7 @@ impl CacheMigrator for LegacyMigrator {
     }
 
     fn migrate(&self, data: &[u8], cache_path: &Path) -> Result<RemoteMap> {
-        println!("Migrating from legacy cache format...");
+        log::debug!("migrating from legacy cache format");
 
         let legacy_cache: LegacyCache =
             serde_json::from_slice(data).context("Failed to parse legacy cache")?;
@@ -59,7 +59,7 @@ impl CacheMigrator for LegacyMigrator {
         let backup_path = cache_path.with_extension("json.bak");
         fs::copy(cache_path, &backup_path).context("Failed to backup legacy cache file")?;
 
-        println!(
+        log::debug!(
             "Cache migration complete. Backup saved at {:?}",
             backup_path
         );
@@ -128,7 +128,7 @@ impl MigrationManager {
 
         // Try parsing as versioned cache first
         if let Ok(versioned_cache) = serde_json::from_slice::<VersionedCache>(&data) {
-            println!("Using cache version {}", versioned_cache.version);
+            log::debug!("Using cache version {}", versioned_cache.version);
 
             // If already at current version, use as is
             if versioned_cache.version == self.current_version {
@@ -136,9 +136,10 @@ impl MigrationManager {
             }
 
             // Future: Add specific version-to-version migrations here
-            println!(
+            log::debug!(
                 "Cache version {} migrated to {}",
-                versioned_cache.version, self.current_version
+                versioned_cache.version,
+                self.current_version
             );
             return Ok(versioned_cache.entries);
         }
@@ -146,13 +147,13 @@ impl MigrationManager {
         // Try each migrator in sequence
         for migrator in &self.migrators {
             if migrator.can_migrate(&data) {
-                println!("Found compatible migrator: {}", migrator.version());
+                log::debug!("Found compatible migrator: {}", migrator.version());
                 return migrator.migrate(&data, cache_path);
             }
         }
 
         // If no migrator works, log and return empty cache
-        eprintln!("Warning: Could not migrate cache, creating new one");
+        log::warn!("could not migrate cache, creating a new one");
         Ok(RemoteMap::new())
     }
 

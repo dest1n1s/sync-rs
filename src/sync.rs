@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use log::{debug, log_enabled, Level, LevelFilter};
 use std::io::{ErrorKind, Write};
 use std::process::{Command, Stdio};
 
@@ -47,11 +48,13 @@ fn check_rsync_version() -> Result<()> {
             version_str
         );
     }
+    debug!("rsync version {version_str}");
 
     Ok(())
 }
 
 pub fn get_remote_home(remote_host: &str) -> Result<String> {
+    debug!("ssh {remote_host} 'echo $HOME'");
     let output = Command::new("ssh")
         .arg(remote_host)
         .arg("echo $HOME")
@@ -79,7 +82,15 @@ pub fn sync_directory(source: &str, destination: &str, rules: Rules, delete: boo
     check_rsync_version()?;
 
     let mut cmd = Command::new("rsync");
-    cmd.args(["-azP"]);
+    cmd.arg("-az");
+    if log::max_level() < LevelFilter::Info {
+        cmd.arg("--quiet");
+    } else {
+        cmd.arg("-P");
+        if log_enabled!(Level::Debug) {
+            cmd.arg("--itemize-changes");
+        }
+    }
 
     if delete {
         cmd.args(["--delete"]);
@@ -99,6 +110,7 @@ pub fn sync_directory(source: &str, destination: &str, rules: Rules, delete: boo
     }
 
     cmd.args([source, destination]);
+    debug!("{cmd:?}");
 
     let mut child = cmd.spawn().context("Failed to execute rsync command")?;
 
@@ -143,6 +155,7 @@ pub fn list_remote_siblings(host: &str, base: &str) -> Result<Vec<String>> {
         shell_quote(parent),
         shell_quote(&pattern)
     );
+    debug!("ssh {host} {command}");
     let output = Command::new("ssh")
         .arg(host)
         .arg(&command)
@@ -172,6 +185,7 @@ fn shell_quote(text: &str) -> String {
 }
 
 pub fn execute_ssh_command(host: &str, command: &str) -> Result<()> {
+    debug!("ssh {host} {command}");
     let status = Command::new("ssh")
         .arg(host)
         .arg(command)

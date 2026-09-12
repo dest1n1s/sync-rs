@@ -1,6 +1,8 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{ArgAction, Parser};
+use log::{debug, info, warn};
 use std::env;
+use std::time::Instant;
 
 // Import from our crate modules
 use sync_rs::{
@@ -9,6 +11,7 @@ use sync_rs::{
         confirm, generate_unique_name, list_remotes, prompt_remote_info, remove_remote,
         select_remote, RemoteEntry,
     },
+    console,
     ignore::git_ignored_paths,
     sync::{
         execute_ssh_command, get_remote_home, list_remote_siblings, open_remote_shell,
@@ -73,14 +76,30 @@ struct Args {
     /// Remove remote branch mirrors: the one for --branch, or all whose branch is gone locally
     #[arg(long)]
     prune: bool,
+
+    /// Show what runs underneath (git, rsync, ssh); twice to list every exclude rule
+    #[arg(short = 'v', long, action = ArgAction::Count)]
+    verbose: u8,
+
+    /// Only report warnings and errors
+    #[arg(short = 'q', long, conflicts_with = "verbose")]
+    quiet: bool,
 }
 
-fn main() -> Result<()> {
+fn main() {
     let args = Args::parse();
+    console::init(args.verbose, args.quiet);
+    if let Err(err) = run(args) {
+        log::error!("{err:#}");
+        std::process::exit(1);
+    }
+}
 
+fn run(args: Args) -> Result<()> {
     // Get current directory and cache path
     let current_dir = env::current_dir()?;
     let cache_path = get_cache_path()?;
+    debug!("cache at {}", cache_path.display());
 
     // Initialize migration manager with current program version
     let migration_manager = MigrationManager::new(env!("CARGO_PKG_VERSION").to_string());
@@ -103,6 +122,7 @@ fn main() -> Result<()> {
         .to_str()
         .unwrap_or_default()
         .to_string();
+    debug!("remote configuration of {current_dir_str}");
 
     // Ensure the current directory exists in the cache
     if !cache.contains_key(&current_dir_str) {
@@ -344,14 +364,14 @@ fn prune(location: &Location, branch: Option<&str>, remote_entry: &RemoteEntry) 
         }
     });
     for dir in &kept {
-        println!("Keeping {}", dir);
+        info!("keep   {}", tilde(dir, &remote_home));
     }
     if doomed.is_empty() {
-        println!("Nothing to prune");
+        info!("Nothing to prune");
         return Ok(());
     }
     for dir in &doomed {
-        println!("Removing {}", dir);
+        info!("remove {}", tilde(dir, &remote_home));
     }
     if !confirm(&format!(
         "Remove {} director{} on {}?",
@@ -359,10 +379,24 @@ fn prune(location: &Location, branch: Option<&str>, remote_entry: &RemoteEntry) 
         if doomed.len() == 1 { "y" } else { "ies" },
         remote_entry.remote_host
     ))? {
-        println!("Aborted");
+        info!("Aborted");
         return Ok(());
     }
-    remove_remote_dirs(&remote_entry.remote_host, &doomed)
+    remove_remote_dirs(&remote_entry.remote_host, &doomed)?;
+    info!(
+        "Removed {} director{}",
+        doomed.len(),
+        if doomed.len() == 1 { "y" } else { "ies" }
+    );
+    Ok(())
+}
+
+/// `path` with the remote home shortened to `~`.
+fn tilde(path: &str, remote_home: &str) -> String {
+    match path.strip_prefix(remote_home) {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("~{rest}"),
+        _ => path.to_string(),
+    }
 }
 
 fn remote_full_dir(remote_dir: &str, remote_home: &str) -> String {
@@ -387,13 +421,15 @@ fn perform_sync(
         None => remote_entry.remote_dir.clone(),
     };
     let remote_full_dir = remote_full_dir(&remote_dir, &remote_home);
-    println!(
+    info!(
         "Syncing {} to {} ({}:{})",
-        target.source.display(),
+        target.label,
         remote_entry.name,
         remote_entry.remote_host,
-        remote_full_dir
+        tilde(&remote_full_dir, &remote_home)
     );
+    debug!("source {}", target.source.display());
+    let started = Instant::now();
 
     // Sync main directory, excluding what git ignores plus any additional ignore patterns;
     // a linked worktree's `.git` only points at a local path
@@ -408,7 +444,7 @@ fn perform_sync(
 
     match git_ignored_paths(&target.source)? {
         Some(paths) => {
-            println!("Excluding {} paths ignored by git", paths.len());
+            info!("Excluding {} paths ignored by git", paths.len());
             let rules: Vec<Vec<u8>> = paths
                 .iter()
                 .map(|path| [b"- ", path.as_slice()].concat())
@@ -417,7 +453,7 @@ fn perform_sync(
             sync_directory(&source, &destination, Rules::Stream(&rules), true)?;
         }
         None => {
-            println!("git not found, relying on rsync's own .gitignore reading");
+            warn!("git not found, relying on rsync's own .gitignore reading");
             let rules: Vec<String> = std::iter::once(String::from(":- .gitignore"))
                 .chain(user_rules)
                 .collect();
@@ -436,18 +472,21 @@ fn perform_sync(
         )?;
     }
 
+    info!("Synced in {:.1}s", started.elapsed().as_secs_f64());
+
     // Execute post-sync command if specified
     if let Some(cmd) = &remote_entry.post_sync_command {
-        println!("Executing post-sync command: {}", cmd);
+        info!("Running post-sync command: {}", cmd);
         let full_command = format!("cd {} && {}", remote_full_dir, cmd);
         execute_ssh_command(&remote_entry.remote_host, &full_command)?;
     }
 
     // Open interactive shell if requested
     if open_shell {
-        println!(
-            "Opening interactive shell in {}:{}",
-            remote_entry.remote_host, remote_full_dir
+        info!(
+            "Opening shell in {}:{}",
+            remote_entry.remote_host,
+            tilde(&remote_full_dir, &remote_home)
         );
         open_remote_shell(&remote_entry.remote_host, &remote_full_dir)?;
     }

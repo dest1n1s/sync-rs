@@ -41,6 +41,8 @@ sync-rs user@host remote_dir
 - `-i, --ignore`: Patterns to ignore (can specify multiple)
 - `-b, --branch`: Sync this branch instead of the working tree
 - `--prune`: Remove remote branch mirrors, all stale ones or the one for `-b`
+- `-v, --verbose`: Show the git, rsync and ssh commands underneath; `-vv` also lists every exclude rule
+- `-q, --quiet`: Only report warnings and errors
 
 ### Examples
 

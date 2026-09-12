@@ -23,7 +23,7 @@ Releases are also driven by release-please on `master`; a pushed `v*` tag runs
 
 ## Architecture
 
-Binary (`src/main.rs`) over a library (`src/lib.rs`) split into five modules:
+Binary (`src/main.rs`) over a library (`src/lib.rs`) split into six modules:
 
 - **`sync.rs`** — rsync and ssh invocations. `sync_directory` invokes `rsync -azP` (plus
   `--delete` when requested), taking filter rules as `--filter` arguments or streamed
@@ -40,6 +40,8 @@ Binary (`src/main.rs`) over a library (`src/lib.rs`) split into five modules:
   remotes apply; `target` picks the sync source and the `@<branch>` suffix of the remote
   directory, checking out a temporary detached worktree for `-b` when none has the branch.
   `live_suffixes` is what `--prune` keeps: every suffix a sync could currently produce.
+- **`console.rs`** — the `log` backend: info lines on stdout, other levels prefixed on stderr;
+  `-v`/`-q` set the level, and `sync_directory` derives rsync's own verbosity from it.
 - **`config.rs`** — `RemoteEntry` (the serialized config record) plus the interactive
   prompt/select/list/remove helpers and `generate_unique_name` (host-derived, collision-suffixed).
 - **`cache.rs`** — persistence + versioned migration. `RemoteMap` is

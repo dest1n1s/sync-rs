@@ -123,6 +123,54 @@ pub fn sync_directory(source: &str, destination: &str, rules: Rules, delete: boo
     Ok(())
 }
 
+/// Directories on `host` named `<base>@<anything>`, as full paths.
+pub fn list_remote_siblings(host: &str, base: &str) -> Result<Vec<String>> {
+    let (parent, name) = match base.rsplit_once('/') {
+        Some((parent, name)) if !parent.is_empty() => (parent, name),
+        Some((_, name)) => ("/", name),
+        None => (".", base),
+    };
+    let pattern: String = name
+        .chars()
+        .flat_map(|c| match c {
+            '*' | '?' | '[' | '\\' => vec!['\\', c],
+            _ => vec![c],
+        })
+        .chain("@*".chars())
+        .collect();
+    let command = format!(
+        "find {} -mindepth 1 -maxdepth 1 -type d -name {}",
+        shell_quote(parent),
+        shell_quote(&pattern)
+    );
+    let output = Command::new("ssh")
+        .arg(host)
+        .arg(&command)
+        .output()
+        .context("Failed to list remote directories")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "SSH command failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let mut dirs: Vec<String> = String::from_utf8(output.stdout)?
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    dirs.sort();
+    Ok(dirs)
+}
+
+pub fn remove_remote_dirs(host: &str, dirs: &[String]) -> Result<()> {
+    let quoted: Vec<String> = dirs.iter().map(|dir| shell_quote(dir)).collect();
+    execute_ssh_command(host, &format!("rm -rf -- {}", quoted.join(" ")))
+}
+
+fn shell_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
 pub fn execute_ssh_command(host: &str, command: &str) -> Result<()> {
     let status = Command::new("ssh")
         .arg(host)

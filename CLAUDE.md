@@ -23,17 +23,23 @@ Releases are also driven by release-please on `master`; a pushed `v*` tag runs
 
 ## Architecture
 
-Binary (`src/main.rs`) over a library (`src/lib.rs`) split into four modules:
+Binary (`src/main.rs`) over a library (`src/lib.rs`) split into five modules:
 
 - **`sync.rs`** — rsync and ssh invocations. `sync_directory` invokes `rsync -azP` (plus
   `--delete` when requested), taking filter rules as `--filter` arguments or streamed
   NUL-separated on stdin (`Rules`), and gates on `check_rsync_version` requiring rsync ≥ 3.
   `get_remote_home` runs `ssh host 'echo $HOME'`; `execute_ssh_command` / `open_remote_shell`
-  handle post-sync commands and the interactive `-s` shell.
+  handle post-sync commands and the interactive `-s` shell; `list_remote_siblings` /
+  `remove_remote_dirs` back `--prune`.
 - **`ignore.rs`** — `git_ignored_paths` turns git's own ignore decision (`ls-files --others
   --ignored --exclude-standard --directory`) into anchored rsync exclude patterns, recursing
   into nested repositories and submodules; outside a work tree it evaluates the tree against
   a throwaway bare repository.
+- **`worktree.rs`** — `Location::discover` places the cwd among the repository's worktrees.
+  `config_dir` maps a linked worktree onto its main-worktree counterpart so the project's
+  remotes apply; `target` picks the sync source and the `@<branch>` suffix of the remote
+  directory, checking out a temporary detached worktree for `-b` when none has the branch.
+  `live_suffixes` is what `--prune` keeps: every suffix a sync could currently produce.
 - **`config.rs`** — `RemoteEntry` (the serialized config record) plus the interactive
   prompt/select/list/remove helpers and `generate_unique_name` (host-derived, collision-suffixed).
 - **`cache.rs`** — persistence + versioned migration. `RemoteMap` is
@@ -54,11 +60,12 @@ working directory*:
 Setting `--preferred` (`-P`) clears the `preferred` flag on all sibling entries for that
 directory before setting it on the chosen one — only one preferred per directory.
 
-`perform_sync` streams the excludes from `git_ignored_paths` plus `-i` patterns (as
-`- <pattern>`) to rsync. Only when git is not installed does it fall back to a per-directory
-`:- .gitignore` filter, passed as an argument because `--from0` changes how rsync reads merge
-files. The main sync always runs with `--delete`; override paths (`-o`) only delete when `-d`
-is passed.
+`main` resolves the cache key through `Location::config_dir` unless the cwd already has
+entries of its own, so worktrees inherit their project's remotes. `perform_sync` streams the
+excludes from `git_ignored_paths` plus `-i` patterns (as `- <pattern>`) to rsync. Only when
+git is not installed does it fall back to a per-directory `:- .gitignore` filter, passed as an
+argument because `--from0` changes how rsync reads merge files. The main sync always runs
+with `--delete`; override paths (`-o`) only delete when `-d` is passed.
 
 ### Cache migration
 
@@ -71,8 +78,8 @@ caches still deserialize; add a new `CacheMigrator` only for structural changes 
 
 ## Notes
 
-- Tests live in `tests/` and need git and rsync on `PATH`: `ignore.rs` holds fixed scenarios,
-  `adversarial.rs` hand-built hostile layouts, and `fuzz.rs` random trees
+- Tests live in `tests/` and need git and rsync on `PATH`: `ignore.rs` and `worktree.rs` hold
+  fixed scenarios, `adversarial.rs` hand-built hostile layouts, and `fuzz.rs` random trees
   (`SYNC_RS_FUZZ_CASES`, `SYNC_RS_FUZZ_SEED`); the latter two compare the synced tree with
   the `git check-ignore` oracle in `tests/common/oracle.rs`. `make release` runs
   `cargo test --all-features` as a gate.

@@ -35,6 +35,14 @@ pub fn prompt_remote_info() -> Result<(String, String)> {
     ))
 }
 
+pub fn confirm(question: &str) -> Result<bool> {
+    print!("{} [y/N] ", question);
+    io::stdout().flush()?;
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
+}
+
 pub fn select_remote(entries: &[RemoteEntry]) -> Result<String> {
     println!("Multiple remote configurations found. Please select one:");
 

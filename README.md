@@ -7,6 +7,7 @@ A simple tool for syncing local directories to remote servers using rsync and SS
 - Sync local directories to remote servers using rsync
 - Support for multiple remote configurations per directory
 - Excludes exactly what git ignores
+- Worktrees and branches mirror to their own remote directories
 - Additional ignore patterns support
 - Post-sync command execution
 - Interactive remote shell access
@@ -38,6 +39,8 @@ sync-rs user@host remote_dir
 - `-d, --delete-override`: Enable delete mode for override paths (default: disabled)
 - `-P, --preferred`: Set this remote as the preferred one for this directory
 - `-i, --ignore`: Patterns to ignore (can specify multiple)
+- `-b, --branch`: Sync this branch instead of the working tree
+- `--prune`: Remove remote branch mirrors, all stale ones or the one for `-b`
 
 ### Examples
 
@@ -88,6 +91,20 @@ sync-rs -n my-remote -P
 ```bash
 sync-rs user@host remote_dir -i "*.tmp" -i "build/"
 ```
+
+### Worktrees and Branches
+
+A linked worktree shares the remote configuration of its main worktree and mirrors to `<remote_dir>@<branch>` (or `@<directory name>` when detached), so `cd ../proj-feature && sync-rs` lands in `proj@feature` and leaves the main mirror alone. `.git` is not copied for such mirrors.
+
+To try a branch remotely without touching your working tree:
+
+```bash
+sync-rs -b feature -p "cargo test"
+```
+
+This syncs from the worktree checked out on `feature`, or from a temporary detached checkout that is removed afterwards, to `<remote_dir>@feature`. Slashes in branch names become dashes.
+
+Branch mirrors accumulate on the remote. `sync-rs --prune` lists them, and after confirmation removes those whose name no longer matches any local worktree, branch, tag or remote-tracking ref; `sync-rs --prune -b feature` removes that one mirror.
 
 ### Preferred Remotes
 

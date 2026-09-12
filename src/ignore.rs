@@ -96,7 +96,7 @@ fn collect(
 
 /// `/prefix/entry` with rsync's wildcard characters escaped so the path matches literally.
 /// A backslash is itself an escape only in patterns that contain a wildcard.
-fn exclude_pattern(prefix: &[u8], entry: &[u8]) -> Vec<u8> {
+pub fn exclude_pattern(prefix: &[u8], entry: &[u8]) -> Vec<u8> {
     let path = [prefix, entry].concat();
     let mut pattern = vec![b'/'];
     if path.iter().any(|b| matches!(b, b'*' | b'?' | b'[')) {

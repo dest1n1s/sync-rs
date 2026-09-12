@@ -67,7 +67,8 @@ entries of its own, so worktrees inherit their project's remotes. `perform_sync`
 excludes from `git_ignored_paths` plus `-i` patterns (as `- <pattern>`) to rsync. Only when
 git is not installed does it fall back to a per-directory `:- .gitignore` filter, passed as an
 argument because `--from0` changes how rsync reads merge files. The main sync always runs
-with `--delete`; override paths (`-o`) only delete when `-d` is passed.
+with `--delete` but excludes override paths (`-o`); those are mirrored afterwards with
+`--relative`, skipped when missing locally, and only delete when `-d` is passed.
 
 ### Cache migration
 

@@ -30,7 +30,7 @@ sync-rs user@host remote_dir
 
 ### Command Line Options
 
-- `-o, --override-path`: Additional paths to sync (can specify multiple)
+- `-o, --override-path`: Additional paths to sync even if ignored, relative to the synced directory (can specify multiple)
 - `-p, --post-command`: Post-sync command to execute
 - `-s, --shell`: Open an interactive shell in the remote directory after syncing
 - `-n, --name`: Name for this remote configuration (used when managing multiple remotes)
@@ -109,6 +109,16 @@ sync-rs -b feature -p "cargo test"
 This syncs from the worktree checked out on `feature`, or from a temporary detached checkout that is removed afterwards, to `<remote_dir>@feature`. Slashes in branch names become dashes.
 
 Branch mirrors accumulate on the remote. `sync-rs --prune` lists them, and after confirmation removes those whose name no longer matches any local worktree, branch, tag or remote-tracking ref; `sync-rs --prune -b feature` removes that one mirror.
+
+### Override Paths
+
+Override paths are synced after the main transfer whether git ignores them or not, and land at the same relative location remotely:
+
+```bash
+sync-rs -o data -o .env
+```
+
+The main transfer never touches them, so a remote copy survives even when the path is missing locally; a missing path is skipped with a warning. `-i` patterns apply inside them, and extra remote files inside them are only deleted with `-d`.
 
 ### Preferred Remotes
 

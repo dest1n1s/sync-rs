@@ -12,10 +12,10 @@ use sync_rs::{
         remove_remote, select_remote, RemoteEntry,
     },
     console,
-    ignore::git_ignored_paths,
+    ignore::{exclude_pattern, git_ignored_paths},
     sync::{
         execute_ssh_command, get_remote_home, list_remote_siblings, open_remote_shell,
-        remove_remote_dirs, sync_directory, Rules,
+        override_path, remove_remote_dirs, sync_directory, sync_relative, Rules,
     },
     worktree::{suffix_for, Location, Target},
 };
@@ -33,7 +33,7 @@ struct Args {
     /// Remote directory (relative to remote home)
     remote_dir: Option<String>,
 
-    /// Additional paths to sync (can specify multiple)
+    /// Additional paths to sync even if ignored, relative to the synced directory
     #[arg(short, long)]
     override_path: Vec<String>,
 
@@ -448,16 +448,32 @@ fn perform_sync(
     debug!("source {}", target.source.display());
     let started = Instant::now();
 
-    // Sync main directory, excluding what git ignores plus any additional ignore patterns;
-    // a linked worktree's `.git` only points at a local path
+    // Sync main directory, excluding what git ignores plus any additional ignore patterns.
+    // Override paths belong to their own transfer below, so the main one must neither send
+    // nor delete them; a linked worktree's `.git` only points at a local path.
     let destination = format!("{}:{}", remote_entry.remote_host, remote_full_dir);
     let source = format!("{}/", target.source.display());
-    let user_rules = target.suffix.iter().map(|_| String::from("- /.git")).chain(
-        remote_entry
-            .ignore_patterns
-            .iter()
-            .map(|pattern| format!("- {}", pattern)),
-    );
+    let overrides: Vec<String> = remote_entry
+        .override_paths
+        .iter()
+        .map(|path| override_path(path))
+        .collect::<Result<_>>()?;
+    let ignore_rules: Vec<String> = remote_entry
+        .ignore_patterns
+        .iter()
+        .map(|pattern| format!("- {}", pattern))
+        .collect();
+    let user_rules = target
+        .suffix
+        .iter()
+        .map(|_| String::from("- /.git"))
+        .chain(overrides.iter().map(|path| {
+            format!(
+                "- {}",
+                String::from_utf8_lossy(&exclude_pattern(b"", path.as_bytes()))
+            )
+        }))
+        .chain(ignore_rules.iter().cloned());
 
     match git_ignored_paths(&target.source)? {
         Some(paths) => {
@@ -478,13 +494,18 @@ fn perform_sync(
         }
     }
 
-    // Sync additional paths
-    for path in &remote_entry.override_paths {
-        let path = target.source.join(path);
-        sync_directory(
-            path.to_str().unwrap_or_default(),
+    // Sync override paths to the same relative location
+    for path in &overrides {
+        if !target.source.join(path).exists() {
+            warn!("Skipping override path {path}: not found locally");
+            continue;
+        }
+        info!("Syncing override path {path}");
+        sync_relative(
+            &target.source,
+            path,
             &destination,
-            Rules::Args(&[]),
+            Rules::Args(&ignore_rules),
             delete_override,
         )?;
     }

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use log::{debug, log_enabled, Level, LevelFilter};
 use std::io::{ErrorKind, Write};
+use std::path::{Component, Path};
 use std::process::{Command, Stdio};
 
 /// How a transfer's rsync filter rules are handed over.
@@ -78,9 +79,45 @@ pub fn get_remote_home(remote_host: &str) -> Result<String> {
 }
 
 pub fn sync_directory(source: &str, destination: &str, rules: Rules, delete: bool) -> Result<()> {
-    // Ensure rsync version is greater than 3
-    check_rsync_version()?;
+    let mut cmd = rsync_command(rules, delete);
+    cmd.args([source, destination]);
+    run_rsync(cmd, rules)
+}
 
+/// Mirror `path`, relative to `root`, to the same relative location under `destination`.
+/// Deletion, when enabled, stays within `path`.
+pub fn sync_relative(
+    root: &Path,
+    path: &str,
+    destination: &str,
+    rules: Rules,
+    delete: bool,
+) -> Result<()> {
+    let mut cmd = rsync_command(rules, delete);
+    cmd.arg("--relative")
+        .current_dir(root)
+        .args([path, destination]);
+    run_rsync(cmd, rules)
+}
+
+/// An override path as given on the command line, normalized to `a/b` form. Paths that
+/// leave the synced directory are refused.
+pub fn override_path(path: &str) -> Result<String> {
+    let mut parts = Vec::new();
+    for component in Path::new(path).components() {
+        match component {
+            Component::Normal(part) => parts.push(part.to_string_lossy().into_owned()),
+            Component::CurDir => {}
+            _ => anyhow::bail!("Override path {path:?} must lie inside the synced directory"),
+        }
+    }
+    if parts.is_empty() {
+        anyhow::bail!("Override path {path:?} must name something inside the synced directory");
+    }
+    Ok(parts.join("/"))
+}
+
+fn rsync_command(rules: Rules, delete: bool) -> Command {
     let mut cmd = Command::new("rsync");
     cmd.arg("-az");
     if log::max_level() < LevelFilter::Info {
@@ -108,8 +145,12 @@ pub fn sync_directory(source: &str, destination: &str, rules: Rules, delete: boo
         }
         Rules::Stream(_) => {}
     }
+    cmd
+}
 
-    cmd.args([source, destination]);
+fn run_rsync(mut cmd: Command, rules: Rules) -> Result<()> {
+    // Ensure rsync version is greater than 3
+    check_rsync_version()?;
     debug!("{cmd:?}");
 
     let mut child = cmd.spawn().context("Failed to execute rsync command")?;

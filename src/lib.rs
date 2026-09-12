@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod config;
+pub mod ignore;
 pub mod sync;
 
 // Re-export key types for easier external use

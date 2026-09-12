@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use std::env;
+use std::path::Path;
 
 // Import from our crate modules
 use sync_rs::{
@@ -9,7 +10,8 @@ use sync_rs::{
         generate_unique_name, list_remotes, prompt_remote_info, remove_remote, select_remote,
         RemoteEntry,
     },
-    sync::{execute_ssh_command, get_remote_home, open_remote_shell, sync_directory},
+    ignore::git_ignored_paths,
+    sync::{execute_ssh_command, get_remote_home, open_remote_shell, sync_directory, Rules},
 };
 
 // This application requires a Unix-like environment
@@ -307,26 +309,35 @@ fn perform_sync(remote_entry: &RemoteEntry, open_shell: bool, delete_override: b
         remote_entry.name, remote_entry.remote_host, remote_full_dir
     );
 
-    // Sync main directory with .gitignore filtering and any additional ignore patterns
+    // Sync main directory, excluding what git ignores plus any additional ignore patterns
     let destination = format!("{}:{}", remote_entry.remote_host, remote_full_dir);
+    let user_rules = remote_entry
+        .ignore_patterns
+        .iter()
+        .map(|pattern| format!("- {}", pattern));
 
-    // Start with .gitignore filter
-    let mut filter_strings = vec![String::from(":- .gitignore")];
-
-    // Add additional ignore patterns
-    for pattern in &remote_entry.ignore_patterns {
-        // Format as rsync exclude pattern
-        filter_strings.push(format!("- {}", pattern));
+    match git_ignored_paths(Path::new("."))? {
+        Some(paths) => {
+            println!("Excluding {} paths ignored by git", paths.len());
+            let rules: Vec<Vec<u8>> = paths
+                .iter()
+                .map(|path| [b"- ", path.as_slice()].concat())
+                .chain(user_rules.map(String::into_bytes))
+                .collect();
+            sync_directory(".", &destination, Rules::Stream(&rules), true)?;
+        }
+        None => {
+            println!("git not found, relying on rsync's own .gitignore reading");
+            let rules: Vec<String> = std::iter::once(String::from(":- .gitignore"))
+                .chain(user_rules)
+                .collect();
+            sync_directory(".", &destination, Rules::Args(&rules), true)?;
+        }
     }
-
-    // Join filters with commas for rsync
-    let filter_string = filter_strings.join(",");
-
-    sync_directory(".", &destination, Some(&filter_string), true)?;
 
     // Sync additional paths
     for path in &remote_entry.override_paths {
-        sync_directory(path, &destination, None, delete_override)?;
+        sync_directory(path, &destination, Rules::Args(&[]), delete_override)?;
     }
 
     // Execute post-sync command if specified

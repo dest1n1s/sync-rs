@@ -1,5 +1,16 @@
 use anyhow::{Context, Result};
-use std::process::Command;
+use std::io::{ErrorKind, Write};
+use std::process::{Command, Stdio};
+
+/// How a transfer's rsync filter rules are handed over.
+#[derive(Clone, Copy)]
+pub enum Rules<'a> {
+    /// As `--filter` arguments; the only form that admits per-directory merge rules such as
+    /// `:- .gitignore`, because `--from0` changes how merge files are read.
+    Args(&'a [String]),
+    /// NUL-separated on stdin, so rules naming any file survive and their number is unbounded.
+    Stream(&'a [Vec<u8>]),
+}
 
 fn check_rsync_version() -> Result<()> {
     let output = Command::new("rsync")
@@ -12,31 +23,31 @@ fn check_rsync_version() -> Result<()> {
     }
 
     let version_output = String::from_utf8_lossy(&output.stdout);
-    
+
     // Parse version from output like "rsync  version 3.2.7  protocol version 31"
     let version_line = version_output
         .lines()
         .next()
         .context("No version information found")?;
-    
+
     let version_str = version_line
         .split_whitespace()
         .nth(2)
         .context("Could not parse rsync version")?;
-    
+
     let major_version = version_str
         .split('.')
         .next()
         .and_then(|v| v.parse::<u32>().ok())
         .context("Could not parse major version number")?;
-    
+
     if major_version < 3 {
         anyhow::bail!(
             "rsync version {} is not supported. Please upgrade to version > 3.0",
             version_str
         );
     }
-    
+
     Ok(())
 }
 
@@ -63,15 +74,10 @@ pub fn get_remote_home(remote_host: &str) -> Result<String> {
     Ok(home)
 }
 
-pub fn sync_directory(
-    source: &str,
-    destination: &str,
-    filter: Option<&str>,
-    delete: bool,
-) -> Result<()> {
+pub fn sync_directory(source: &str, destination: &str, rules: Rules, delete: bool) -> Result<()> {
     // Ensure rsync version is greater than 3
     check_rsync_version()?;
-    
+
     let mut cmd = Command::new("rsync");
     cmd.args(["-azP"]);
 
@@ -79,16 +85,36 @@ pub fn sync_directory(
         cmd.args(["--delete"]);
     }
 
-    if let Some(f) = filter {
-        // Handle multiple filters separated by commas
-        for filter_rule in f.split(',') {
-            cmd.args(["--filter", filter_rule.trim()]);
+    match rules {
+        Rules::Args(rules) => {
+            for rule in rules {
+                cmd.args(["--filter", rule]);
+            }
         }
+        Rules::Stream(rules) if !rules.is_empty() => {
+            cmd.args(["--from0", "--filter", "merge -"]);
+            cmd.stdin(Stdio::piped());
+        }
+        Rules::Stream(_) => {}
     }
 
     cmd.args([source, destination]);
 
-    let status = cmd.status().context("Failed to execute rsync command")?;
+    let mut child = cmd.spawn().context("Failed to execute rsync command")?;
+
+    if let (Some(mut stdin), Rules::Stream(rules)) = (child.stdin.take(), rules) {
+        let written = rules
+            .iter()
+            .try_for_each(|rule| stdin.write_all(rule).and_then(|_| stdin.write_all(b"\0")));
+        // rsync that rejected its arguments has already exited; its own status tells why.
+        if let Err(err) = written {
+            if err.kind() != ErrorKind::BrokenPipe {
+                return Err(err).context("Failed to pass filter rules to rsync");
+            }
+        }
+    }
+
+    let status = child.wait().context("Failed to wait for rsync")?;
 
     if !status.success() {
         anyhow::bail!("rsync failed with exit code: {:?}", status.code());

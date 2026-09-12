@@ -6,7 +6,7 @@ A simple tool for syncing local directories to remote servers using rsync and SS
 
 - Sync local directories to remote servers using rsync
 - Support for multiple remote configurations per directory
-- Automatic .gitignore filtering
+- Excludes exactly what git ignores
 - Additional ignore patterns support
 - Post-sync command execution
 - Interactive remote shell access
@@ -109,19 +109,22 @@ When running sync without specifying a remote, it will automatically use the pre
 
 ### Ignore Patterns
 
-By default, sync-rs uses .gitignore to filter files. You can specify additional patterns to ignore:
+By default, sync-rs excludes whatever git ignores: every `.gitignore` in the tree, `.git/info/exclude` and the global excludes file, with nested repositories and submodules judged by their own rules. Tracked files are always synced, and a directory outside any work tree still has its `.gitignore` files honored. Without git installed, rsync reads the `.gitignore` files itself and negation patterns are not supported.
+
+You can specify additional patterns to ignore:
 
 ```bash
 sync-rs -i "*.tmp" -i "build/" -i "node_modules/"
 ```
 
-These patterns will be used alongside .gitignore when filtering files for syncing. The patterns follow rsync's exclude format.
+These patterns are applied on top of git's rules and follow rsync's exclude format.
 
 ## Requirements
 
 - Unix-like environment (Linux or macOS)
 - rsync
 - SSH
+- git (optional; without it rsync reads `.gitignore` files itself)
 
 ## License
 

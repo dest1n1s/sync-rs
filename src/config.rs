@@ -99,6 +99,36 @@ pub fn list_remotes(cache: &crate::cache::RemoteMap, current_dir: &str) -> Resul
     Ok(())
 }
 
+pub fn list_all_remotes(cache: &crate::cache::RemoteMap) -> Result<()> {
+    let mut dirs: Vec<&String> = cache
+        .iter()
+        .filter(|(_, entries)| !entries.is_empty())
+        .map(|(dir, _)| dir)
+        .collect();
+    if dirs.is_empty() {
+        println!("No remote configurations found.");
+        return Ok(());
+    }
+    dirs.sort();
+
+    for dir in dirs {
+        println!("{}", dir);
+        for (i, entry) in cache[dir].iter().enumerate() {
+            let preferred = if entry.preferred { " (preferred)" } else { "" };
+            println!(
+                "  {}: {}{} ({}:{})",
+                i + 1,
+                entry.name,
+                preferred,
+                entry.remote_host,
+                entry.remote_dir
+            );
+        }
+    }
+
+    Ok(())
+}
+
 pub fn remove_remote(
     cache: &mut crate::cache::RemoteMap,
     current_dir: &str,

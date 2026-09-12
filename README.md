@@ -35,6 +35,8 @@ sync-rs user@host remote_dir
 - `-s, --shell`: Open an interactive shell in the remote directory after syncing
 - `-n, --name`: Name for this remote configuration (used when managing multiple remotes)
 - `-l, --list`: List all remote configurations for the current directory
+- `-L, --list-all`: List the remote configurations of every directory
+- `--config-path`: Print the path of the configuration file
 - `-r, --remove`: Remove a remote configuration by name
 - `-d, --delete-override`: Enable delete mode for override paths (default: disabled)
 - `-P, --preferred`: Set this remote as the preferred one for this directory

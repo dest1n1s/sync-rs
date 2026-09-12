@@ -8,8 +8,8 @@ use std::time::Instant;
 use sync_rs::{
     cache::{get_cache_path, MigrationManager, RemoteMap},
     config::{
-        confirm, generate_unique_name, list_remotes, prompt_remote_info, remove_remote,
-        select_remote, RemoteEntry,
+        confirm, generate_unique_name, list_all_remotes, list_remotes, prompt_remote_info,
+        remove_remote, select_remote, RemoteEntry,
     },
     console,
     ignore::git_ignored_paths,
@@ -52,6 +52,14 @@ struct Args {
     /// List all remote configurations for the current directory
     #[arg(short, long)]
     list: bool,
+
+    /// List the remote configurations of every directory
+    #[arg(short = 'L', long)]
+    list_all: bool,
+
+    /// Print the path of the configuration file
+    #[arg(long)]
+    config_path: bool,
 
     /// Remove a remote configuration by name
     #[arg(short = 'r', long)]
@@ -106,6 +114,15 @@ fn run(args: Args) -> Result<()> {
 
     // Read or initialize cache with migration support
     let mut cache: RemoteMap = migration_manager.read_cache(&cache_path)?;
+
+    if args.config_path {
+        println!("{}", cache_path.display());
+        return Ok(());
+    }
+
+    if args.list_all {
+        return list_all_remotes(&cache);
+    }
 
     // A worktree shares its main worktree's configuration unless it was configured on its own
     let own_config = current_dir

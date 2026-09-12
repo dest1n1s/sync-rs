@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/dest1n1s/sync-rs/compare/v1.6.1...v1.6.2) (2026-09-12)
+
+
+### Bug Fixes
+
+* keep remote override paths safe from the main sync and skip missing ones ([0dd7c42](https://github.com/dest1n1s/sync-rs/commit/0dd7c4289febb27543fc8e9825d04713c9baca67))
+
 ## [1.6.1](https://github.com/dest1n1s/sync-rs/compare/v1.6.0...v1.6.1) (2026-09-12)
 
 

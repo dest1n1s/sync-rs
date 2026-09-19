@@ -12,10 +12,10 @@ use sync_rs::{
         remove_remote, select_remote, RemoteEntry,
     },
     console,
-    ignore::{exclude_pattern, git_ignored_paths},
+    ignore::{exclude_pattern, git_ignored_among, git_ignored_paths},
     sync::{
         execute_ssh_command, get_remote_home, list_remote_siblings, open_remote_shell,
-        override_path, remove_remote_dirs, sync_directory, sync_relative, Rules,
+        override_path, pending_deletions, remove_remote_dirs, sync_directory, sync_relative, Rules,
     },
     worktree::{suffix_for, Location, Target},
 };
@@ -478,11 +478,17 @@ fn perform_sync(
     match git_ignored_paths(&target.source)? {
         Some(paths) => {
             info!("Excluding {} paths ignored by git", paths.len());
-            let rules: Vec<Vec<u8>> = paths
+            let mut rules: Vec<Vec<u8>> = paths
                 .iter()
                 .map(|path| [b"- ", path.as_slice()].concat())
                 .chain(user_rules.map(String::into_bytes))
                 .collect();
+            let doomed = pending_deletions(&source, &destination, Rules::Stream(&rules))?;
+            let kept = git_ignored_among(&target.source, &doomed)?;
+            if !kept.is_empty() {
+                info!("Keeping {} remote paths ignored by git", kept.len());
+            }
+            rules.extend(kept.iter().map(|path| [b"- ", path.as_slice()].concat()));
             sync_directory(&source, &destination, Rules::Stream(&rules), true)?;
         }
         None => {

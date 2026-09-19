@@ -1,12 +1,12 @@
 use anyhow::{bail, Context, Result};
 use log::{debug, trace};
 use std::ffi::OsStr;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{env, fs, process};
+use std::{env, fs, process, thread};
 
 const IGNORED: &[&str] = &["--others", "--ignored", "--exclude-standard", "--directory"];
 
@@ -16,44 +16,36 @@ const IGNORED: &[&str] = &["--others", "--ignored", "--exclude-standard", "--dir
 /// that an enclosing repository ignores wholesale, is evaluated as if freshly `git init`ed, so
 /// only the `.gitignore` files beneath it apply. `None` when git is not installed.
 pub fn git_ignored_paths(root: &Path) -> Result<Option<Vec<Vec<u8>>>> {
-    let root = root.canonicalize()?;
-    let probe = match Command::new("git")
-        .arg("-C")
-        .arg(&root)
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .output()
-    {
-        Ok(output) => output,
-        Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(err).context("Failed to execute git"),
+    let Some((repo, ignored)) = Repo::open(root)? else {
+        return Ok(None);
     };
-    let stderr = String::from_utf8_lossy(&probe.stderr);
-    if !probe.status.success() && !stderr.contains("not a git repository") {
-        bail!("git rev-parse failed: {}", stderr.trim());
-    }
-
-    let mut repo = Repo {
-        dir: root,
-        scratch: None,
-    };
-    let mut ignored = if probe.stdout.trim_ascii() == b"true" {
-        repo.ls_files(IGNORED)?
-    } else {
-        Vec::new()
-    };
-    // Git reports an ignored root as a lone `./` and never looks inside it.
-    if probe.stdout.trim_ascii() != b"true" || ignored.iter().any(|entry| entry == b"./") {
-        debug!(
-            "{} is not a work tree of its own; evaluating .gitignore files against a scratch index",
-            repo.dir.display()
-        );
-        repo.scratch = Some(ScratchRepo::create()?);
-        ignored = repo.ls_files(IGNORED)?;
-    }
-
     let mut excludes = Vec::new();
     collect(&repo, ignored, b"", &mut excludes)?;
     Ok(Some(excludes))
+}
+
+pub fn git_ignored_among(root: &Path, candidates: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+    let mut excludes = Vec::new();
+    if candidates.is_empty() {
+        return Ok(excludes);
+    }
+    let (repo, _) = Repo::open(root)?.context("git is not installed")?;
+    // Whatever a local file or symlink replaces goes with it.
+    let candidates = candidates
+        .iter()
+        .map(Vec::as_slice)
+        .filter(|path| {
+            let path = path.strip_suffix(b"/").unwrap_or(path);
+            !Path::new(OsStr::from_bytes(path)).ancestors().any(|at| {
+                repo.dir
+                    .join(at)
+                    .symlink_metadata()
+                    .is_ok_and(|meta| !meta.is_dir())
+            })
+        })
+        .collect();
+    collect_among(&repo, candidates, b"", &mut excludes)?;
+    Ok(excludes)
 }
 
 fn collect(
@@ -62,6 +54,52 @@ fn collect(
     prefix: &[u8],
     out: &mut Vec<Vec<u8>>,
 ) -> Result<()> {
+    push_excludes(ignored, prefix, out);
+    for nested in repo.nested_repos()? {
+        debug!(
+            "nested repository {}{}",
+            String::from_utf8_lossy(prefix),
+            String::from_utf8_lossy(&nested)
+        );
+        let sub = Repo {
+            dir: repo.dir.join(OsStr::from_bytes(&nested)),
+            scratch: None,
+        };
+        let ignored = sub.ls_files(IGNORED)?;
+        collect(&sub, ignored, &[prefix, &nested, b"/"].concat(), out)?;
+    }
+    Ok(())
+}
+
+fn collect_among(
+    repo: &Repo,
+    mut candidates: Vec<&[u8]>,
+    prefix: &[u8],
+    out: &mut Vec<Vec<u8>>,
+) -> Result<()> {
+    for nested in repo.nested_repos()? {
+        let dir = [&nested[..], b"/"].concat();
+        let (inside, outside): (Vec<&[u8]>, Vec<&[u8]>) = candidates
+            .into_iter()
+            .partition(|path| path.starts_with(&dir));
+        candidates = outside;
+        if inside.is_empty() {
+            continue;
+        }
+        let sub = Repo {
+            dir: repo.dir.join(OsStr::from_bytes(&nested)),
+            scratch: None,
+        };
+        let inside = inside.into_iter().map(|path| &path[dir.len()..]).collect();
+        collect_among(&sub, inside, &[prefix, &dir].concat(), out)?;
+    }
+    let mut ignored = repo.check_ignore(&candidates)?;
+    ignored.sort();
+    push_excludes(ignored, prefix, out);
+    Ok(())
+}
+
+fn push_excludes(ignored: Vec<Vec<u8>>, prefix: &[u8], out: &mut Vec<Vec<u8>>) {
     // An ignored directory is listed together with its contents; the directory alone suffices.
     let mut excluded_dir: Option<Vec<u8>> = None;
     for entry in ignored {
@@ -78,20 +116,6 @@ fn collect(
         trace!("exclude {}", String::from_utf8_lossy(&pattern));
         out.push(pattern);
     }
-    for nested in repo.nested_repos()? {
-        debug!(
-            "nested repository {}{}",
-            String::from_utf8_lossy(prefix),
-            String::from_utf8_lossy(&nested)
-        );
-        let sub = Repo {
-            dir: repo.dir.join(OsStr::from_bytes(&nested)),
-            scratch: None,
-        };
-        let ignored = sub.ls_files(IGNORED)?;
-        collect(&sub, ignored, &[prefix, &nested, b"/"].concat(), out)?;
-    }
-    Ok(())
 }
 
 /// `/prefix/entry` with rsync's wildcard characters escaped so the path matches literally.
@@ -118,6 +142,44 @@ struct Repo {
 }
 
 impl Repo {
+    fn open(root: &Path) -> Result<Option<(Self, Vec<Vec<u8>>)>> {
+        let root = root.canonicalize()?;
+        let probe = match Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["rev-parse", "--is-inside-work-tree"])
+            .output()
+        {
+            Ok(output) => output,
+            Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(err) => return Err(err).context("Failed to execute git"),
+        };
+        let stderr = String::from_utf8_lossy(&probe.stderr);
+        if !probe.status.success() && !stderr.contains("not a git repository") {
+            bail!("git rev-parse failed: {}", stderr.trim());
+        }
+
+        let mut repo = Repo {
+            dir: root,
+            scratch: None,
+        };
+        let mut ignored = if probe.stdout.trim_ascii() == b"true" {
+            repo.ls_files(IGNORED)?
+        } else {
+            Vec::new()
+        };
+        // Git reports an ignored root as a lone `./` and never looks inside it.
+        if probe.stdout.trim_ascii() != b"true" || ignored.iter().any(|entry| entry == b"./") {
+            debug!(
+                "{} is not a work tree of its own; evaluating .gitignore files against a scratch index",
+                repo.dir.display()
+            );
+            repo.scratch = Some(ScratchRepo::create()?);
+            ignored = repo.ls_files(IGNORED)?;
+        }
+        Ok(Some((repo, ignored)))
+    }
+
     fn git(&self) -> Command {
         let mut cmd = Command::new("git");
         cmd.arg("-C").arg(&self.dir);
@@ -158,6 +220,41 @@ impl Repo {
             entries.len()
         );
         Ok(entries)
+    }
+
+    fn check_ignore(&self, paths: &[&[u8]]) -> Result<Vec<Vec<u8>>> {
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut child = self
+            .git()
+            .args(["check-ignore", "-z", "--stdin"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("Failed to execute git check-ignore")?;
+        let mut stdin = child.stdin.take().expect("stdin is piped");
+        let input = paths.join(&0);
+        let writer = thread::spawn(move || stdin.write_all(&input));
+        let output = child
+            .wait_with_output()
+            .context("Failed to wait for git check-ignore")?;
+        let _ = writer.join();
+        // Exit status 1 only says that nothing is ignored.
+        if !matches!(output.status.code(), Some(0 | 1)) {
+            bail!(
+                "git check-ignore failed in {}: {}",
+                self.dir.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        Ok(output
+            .stdout
+            .split(|&b| b == 0)
+            .filter(|entry| !entry.is_empty())
+            .map(<[u8]>::to_vec)
+            .collect())
     }
 
     /// Directories holding a repository of their own: submodules (gitlinks in the index) and

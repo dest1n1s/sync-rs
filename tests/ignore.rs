@@ -3,8 +3,8 @@ mod common;
 use std::path::Path;
 
 use common::{commit_all, git, repo, tree, write};
-use sync_rs::ignore::git_ignored_paths;
-use sync_rs::sync::{sync_directory, Rules};
+use sync_rs::ignore::{git_ignored_among, git_ignored_paths};
+use sync_rs::sync::{pending_deletions, sync_directory, Rules};
 use tempfile::{tempdir, TempDir};
 
 fn excludes(root: &Path) -> Vec<String> {
@@ -240,5 +240,97 @@ fn argument_rules_let_rsync_read_gitignore_itself() {
     assert_eq!(
         tree(&dst),
         [".gitignore", "keep", "sub/.gitignore", "sub/keep"]
+    );
+}
+
+#[test]
+fn remote_only_paths_are_judged_by_git() {
+    let tmp = workspace();
+    let root = tmp.path().join("repo");
+    repo(&root, "*.log\n!keep.log\nlogs/\ndoc/draft\n");
+    write(root.join(".git/info/exclude"), "private\n");
+    write(root.join("src/main.rs"), "");
+    repo(&root.join("vendor/lib"), "*.o\n");
+    write(root.join("vendor/lib/lib.c"), "");
+    std::os::unix::fs::symlink("src", root.join("link")).unwrap();
+
+    let candidates: Vec<Vec<u8>> = [
+        "logs/run/x.log",
+        "logs/run/",
+        "logs/",
+        "logs-old/",
+        "src/trace.log",
+        "src/keep.log",
+        "src/stale.rs",
+        "doc/draft",
+        "src/doc/draft",
+        "private",
+        "vendor/lib/lib.o",
+        "vendor/lib/x.log",
+        "link/x.log",
+        "link/",
+    ]
+    .iter()
+    .map(|path| path.as_bytes().to_vec())
+    .collect();
+    let mut kept: Vec<String> = git_ignored_among(&root, &candidates)
+        .unwrap()
+        .iter()
+        .map(|pattern| String::from_utf8_lossy(pattern).into_owned())
+        .collect();
+    kept.sort();
+    assert_eq!(
+        kept,
+        [
+            "/doc/draft",
+            "/logs/",
+            "/private",
+            "/src/trace.log",
+            "/vendor/lib/lib.o"
+        ]
+    );
+}
+
+#[test]
+fn remote_only_ignored_paths_survive_the_sync() {
+    let tmp = workspace();
+    let root = tmp.path().join("repo");
+    let dst = tmp.path().join("dst");
+    repo(&root, "logs/\n*.ckpt\n!keep.ckpt\n");
+    write(root.join("src/main.rs"), "");
+    write(root.join("local.ckpt"), "");
+    write(dst.join("logs/run/x.log"), "");
+    write(dst.join("src/model.ckpt"), "");
+    write(dst.join("src/keep.ckpt"), "");
+    write(dst.join("src/new\nline.ckpt"), "");
+    write(dst.join("src/lit\\#012.ckpt"), "");
+    write(dst.join("src/stale.rs"), "");
+
+    let source = format!("{}/", root.display());
+    let mut rules: Vec<Vec<u8>> = git_ignored_paths(&root)
+        .unwrap()
+        .expect("git is installed")
+        .iter()
+        .map(|path| [b"- ", path.as_slice()].concat())
+        .collect();
+    let doomed = pending_deletions(&source, dst.to_str().unwrap(), Rules::Stream(&rules)).unwrap();
+    let kept = git_ignored_among(&root, &doomed).unwrap();
+    rules.extend(kept.iter().map(|path| [b"- ", path.as_slice()].concat()));
+    sync_directory(&source, dst.to_str().unwrap(), Rules::Stream(&rules), true).unwrap();
+
+    let synced: Vec<String> = tree(&dst)
+        .into_iter()
+        .filter(|path| !path.starts_with(".git/"))
+        .collect();
+    assert_eq!(
+        synced,
+        [
+            ".gitignore",
+            "logs/run/x.log",
+            "src/lit\\#012.ckpt",
+            "src/main.rs",
+            "src/model.ckpt",
+            "src/new\nline.ckpt",
+        ]
     );
 }

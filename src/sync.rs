@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use log::{debug, log_enabled, Level, LevelFilter};
 use std::io::{ErrorKind, Write};
 use std::path::{Component, Path};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 /// How a transfer's rsync filter rules are handed over.
 #[derive(Clone, Copy)]
@@ -84,6 +84,43 @@ pub fn sync_directory(source: &str, destination: &str, rules: Rules, delete: boo
     run_rsync(cmd, rules)
 }
 
+pub fn pending_deletions(source: &str, destination: &str, rules: Rules) -> Result<Vec<Vec<u8>>> {
+    const DELETING: &[u8] = b"*deleting   ";
+    let mut cmd = rsync_command(rules, true);
+    cmd.args(["--dry-run", "--out-format=%i %n", source, destination])
+        .stdout(Stdio::piped());
+    let output = spawn_rsync(cmd, rules)?
+        .wait_with_output()
+        .context("Failed to wait for rsync")?;
+    if !output.status.success() {
+        anyhow::bail!("rsync failed with exit code: {:?}", output.status.code());
+    }
+
+    Ok(output
+        .stdout
+        .split(|&b| b == b'\n')
+        .filter_map(|line| line.strip_prefix(DELETING))
+        .map(|mut name| {
+            // rsync prints a byte it finds unprintable as `\#ooo`, the backslash of a literal
+            // `\#ooo` included.
+            let mut path = Vec::with_capacity(name.len());
+            while let Some((&byte, rest)) = name.split_first() {
+                match name {
+                    [b'\\', b'#', a @ b'0'..=b'3', b @ b'0'..=b'7', c @ b'0'..=b'7', rest @ ..] => {
+                        path.push((a - b'0') << 6 | (b - b'0') << 3 | (c - b'0'));
+                        name = rest;
+                    }
+                    _ => {
+                        path.push(byte);
+                        name = rest;
+                    }
+                }
+            }
+            path
+        })
+        .collect())
+}
+
 /// Mirror `path`, relative to `root`, to the same relative location under `destination`.
 /// Deletion, when enabled, stays within `path`.
 pub fn sync_relative(
@@ -120,14 +157,6 @@ pub fn override_path(path: &str) -> Result<String> {
 fn rsync_command(rules: Rules, delete: bool) -> Command {
     let mut cmd = Command::new("rsync");
     cmd.arg("-az");
-    if log::max_level() < LevelFilter::Info {
-        cmd.arg("--quiet");
-    } else {
-        cmd.arg("-P");
-        if log_enabled!(Level::Debug) {
-            cmd.arg("--itemize-changes");
-        }
-    }
 
     if delete {
         cmd.args(["--delete"]);
@@ -149,6 +178,27 @@ fn rsync_command(rules: Rules, delete: bool) -> Command {
 }
 
 fn run_rsync(mut cmd: Command, rules: Rules) -> Result<()> {
+    if log::max_level() < LevelFilter::Info {
+        cmd.arg("--quiet");
+    } else {
+        cmd.arg("-P");
+        if log_enabled!(Level::Debug) {
+            cmd.arg("--itemize-changes");
+        }
+    }
+
+    let status = spawn_rsync(cmd, rules)?
+        .wait()
+        .context("Failed to wait for rsync")?;
+
+    if !status.success() {
+        anyhow::bail!("rsync failed with exit code: {:?}", status.code());
+    }
+
+    Ok(())
+}
+
+fn spawn_rsync(mut cmd: Command, rules: Rules) -> Result<Child> {
     // Ensure rsync version is greater than 3
     check_rsync_version()?;
     debug!("{cmd:?}");
@@ -167,13 +217,7 @@ fn run_rsync(mut cmd: Command, rules: Rules) -> Result<()> {
         }
     }
 
-    let status = child.wait().context("Failed to wait for rsync")?;
-
-    if !status.success() {
-        anyhow::bail!("rsync failed with exit code: {:?}", status.code());
-    }
-
-    Ok(())
+    Ok(child)
 }
 
 /// Directories on `host` named `<base>@<anything>`, as full paths.

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/dest1n1s/sync-rs/compare/v1.6.2...v1.7.0) (2026-09-19)
+
+
+### Features
+
+* two sync ([e22b8b8](https://github.com/dest1n1s/sync-rs/commit/e22b8b878d433b65dbc77ace9c524f9fa5c68397))
+
 ## [1.6.2](https://github.com/dest1n1s/sync-rs/compare/v1.6.1...v1.6.2) (2026-09-12)
 
 
